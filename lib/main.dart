@@ -143,16 +143,41 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: _buildContent(),
-            ),
-            _buildControls(),
-          ],
-        ),
+        child: _buildLayout(),
       ),
     );
+  }
+
+  Widget _buildLayout() {
+    final content = Expanded(child: _buildContent());
+    final controls = _buildControls();
+
+    // For 90° and 270° rotations, use horizontal layout with controls on the side
+    if (_rotation == 1) {
+      // 90° clockwise - controls on left (visual bottom when reading rotated content)
+      return Row(
+        children: [
+          controls,
+          content,
+        ],
+      );
+    } else if (_rotation == 3) {
+      // 270° clockwise - controls on right (visual bottom when reading rotated content)
+      return Row(
+        children: [
+          content,
+          controls,
+        ],
+      );
+    } else {
+      // 0° or 180° - controls at physical bottom
+      return Column(
+        children: [
+          content,
+          controls,
+        ],
+      );
+    }
   }
 
   Widget _buildContent() {
@@ -176,10 +201,13 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
     }
 
     if (_pageImage == null) {
-      return const Center(
-        child: Text(
-          'Aucun PDF sélectionné',
-          style: TextStyle(color: Colors.white, fontSize: 18),
+      return Center(
+        child: RotatedBox(
+          quarterTurns: _rotation,
+          child: const Text(
+            'Aucun PDF sélectionné',
+            style: TextStyle(color: Colors.white, fontSize: 18),
+          ),
         ),
       );
     }
@@ -200,44 +228,88 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   }
 
   Widget _buildControls() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      color: Colors.black54,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          IconButton(
-            onPressed: _currentPage > 0 ? _previousPage : null,
-            icon: const Icon(Icons.arrow_back),
-            color: Colors.white,
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton.icon(
-            onPressed: _pickAndOpenPdf,
-            icon: const Icon(Icons.folder_open),
-            label: const Text('Ouvrir'),
-          ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: _rotateRight,
-            icon: const Icon(Icons.rotate_right),
-            color: Colors.white,
-            tooltip: '${_rotation * 90}°',
-          ),
-          const SizedBox(width: 8),
-          if (_document != null)
-            Text(
+    final isVertical = _rotation == 1 || _rotation == 3;
+
+    final previousButton = IconButton(
+      onPressed: _currentPage > 0 ? _previousPage : null,
+      icon: Icon(isVertical ? Icons.arrow_upward : Icons.arrow_back),
+      color: Colors.white,
+    );
+
+    final openButton = RotatedBox(
+      quarterTurns: isVertical ? _rotation : 0,
+      child: IconButton(
+        onPressed: _pickAndOpenPdf,
+        icon: const Icon(Icons.folder_open),
+        color: Colors.white,
+        tooltip: 'Ouvrir',
+      ),
+    );
+
+    final rotateButton = RotatedBox(
+      quarterTurns: isVertical ? _rotation : 0,
+      child: IconButton(
+        onPressed: _rotateRight,
+        icon: const Icon(Icons.rotate_right),
+        color: Colors.white,
+        tooltip: '${_rotation * 90}°',
+      ),
+    );
+
+    final pageCounter = _document != null
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: Text(
               '${_currentPage + 1} / $_totalPages',
               style: const TextStyle(color: Colors.white),
             ),
-          const SizedBox(width: 8),
-          IconButton(
-            onPressed: _currentPage < _totalPages - 1 ? _nextPage : null,
-            icon: const Icon(Icons.arrow_forward),
-            color: Colors.white,
-          ),
-        ],
-      ),
+          )
+        : const SizedBox.shrink();
+
+    final nextButton = IconButton(
+      onPressed: _currentPage < _totalPages - 1 ? _nextPage : null,
+      icon: Icon(isVertical ? Icons.arrow_downward : Icons.arrow_forward),
+      color: Colors.white,
     );
+
+    if (isVertical) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        color: Colors.black54,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            previousButton,
+            const SizedBox(height: 8),
+            openButton,
+            const SizedBox(height: 8),
+            rotateButton,
+            const SizedBox(height: 8),
+            pageCounter,
+            const SizedBox(height: 8),
+            nextButton,
+          ],
+        ),
+      );
+    } else {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        color: Colors.black54,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            previousButton,
+            const SizedBox(width: 8),
+            openButton,
+            const SizedBox(width: 8),
+            rotateButton,
+            const SizedBox(width: 8),
+            pageCounter,
+            const SizedBox(width: 8),
+            nextButton,
+          ],
+        ),
+      );
+    }
   }
 }

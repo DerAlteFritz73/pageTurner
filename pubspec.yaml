@@ -39,7 +39,7 @@ dependencies:
   pdfx: ^2.6.0
 
   # File picker
-  file_picker: ^8.0.0
+  file_picker: ^10.3.8
 
 dev_dependencies:
   flutter_test:
