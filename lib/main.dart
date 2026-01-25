@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:file_picker/file_picker.dart';
 
 void main() {
   runApp(const PdfRotateApp());
@@ -50,11 +51,59 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   }
 
   Future<void> _pickAndOpenPdf() async {
-    final selectedPath = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (context) => FileBrowserPage(rotation: _rotation),
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => RotatedBox(
+        quarterTurns: _rotation,
+        child: AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text('Ouvrir un PDF', style: TextStyle(color: Colors.white)),
+          content: const Text(
+            'Choisissez la source du fichier',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () => Navigator.of(context).pop('local'),
+              icon: const Icon(Icons.phone_android),
+              label: const Text('Local'),
+            ),
+            TextButton.icon(
+              onPressed: () => Navigator.of(context).pop('cloud'),
+              icon: const Icon(Icons.cloud),
+              label: const Text('Cloud'),
+            ),
+          ],
+        ),
       ),
     );
+
+    if (choice == null) return;
+
+    String? selectedPath;
+
+    if (choice == 'local') {
+      selectedPath = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (context) => FileBrowserPage(rotation: _rotation),
+        ),
+      );
+    } else if (choice == 'cloud') {
+      try {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['pdf'],
+        );
+        if (result != null && result.files.single.path != null) {
+          selectedPath = result.files.single.path;
+        }
+      } catch (e) {
+        setState(() {
+          _errorMessage = 'Erreur lors de la sélection: $e';
+        });
+        return;
+      }
+    }
 
     if (selectedPath != null) {
       await _openPdf(selectedPath);
