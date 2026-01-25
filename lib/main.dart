@@ -1,6 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:pdfx/pdfx.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(const PdfRotateApp());
@@ -49,19 +50,14 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   }
 
   Future<void> _pickAndOpenPdf() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf'],
-      );
+    final selectedPath = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (context) => FileBrowserPage(rotation: _rotation),
+      ),
+    );
 
-      if (result != null && result.files.single.path != null) {
-        await _openPdf(result.files.single.path!);
-      }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Erreur lors de la sélection: $e';
-      });
+    if (selectedPath != null) {
+      await _openPdf(selectedPath);
     }
   }
 
@@ -311,5 +307,260 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
         ),
       );
     }
+  }
+}
+
+// Custom File Browser Page
+class FileBrowserPage extends StatefulWidget {
+  final int rotation;
+
+  const FileBrowserPage({super.key, required this.rotation});
+
+  @override
+  State<FileBrowserPage> createState() => _FileBrowserPageState();
+}
+
+class _FileBrowserPageState extends State<FileBrowserPage> {
+  Directory? _currentDirectory;
+  List<FileSystemEntity> _items = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+  bool _permissionGranted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _requestPermissionAndLoad();
+  }
+
+  Future<void> _requestPermissionAndLoad() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Request storage permission
+      PermissionStatus status;
+
+      if (Platform.isAndroid) {
+        // For Android 11+ (API 30+), we need MANAGE_EXTERNAL_STORAGE
+        // For older versions, READ_EXTERNAL_STORAGE is sufficient
+        status = await Permission.manageExternalStorage.request();
+        if (!status.isGranted) {
+          status = await Permission.storage.request();
+        }
+      } else {
+        status = await Permission.storage.request();
+      }
+
+      if (status.isGranted || status.isLimited) {
+        _permissionGranted = true;
+        await _navigateToDirectory(_getInitialDirectory());
+      } else if (status.isPermanentlyDenied) {
+        setState(() {
+          _errorMessage = 'Permission refusée. Veuillez autoriser l\'accès au stockage dans les paramètres.';
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _errorMessage = 'Permission de stockage requise pour parcourir les fichiers.';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Erreur: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Directory _getInitialDirectory() {
+    if (Platform.isAndroid) {
+      return Directory('/storage/emulated/0');
+    } else if (Platform.isWindows) {
+      return Directory('C:\\');
+    } else {
+      return Directory('/');
+    }
+  }
+
+  Future<void> _navigateToDirectory(Directory directory) async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final items = await directory.list().toList();
+
+      // Sort: directories first, then files, both alphabetically
+      items.sort((a, b) {
+        final aIsDir = a is Directory;
+        final bIsDir = b is Directory;
+        if (aIsDir && !bIsDir) return -1;
+        if (!aIsDir && bIsDir) return 1;
+        return a.path.toLowerCase().compareTo(b.path.toLowerCase());
+      });
+
+      // Filter: show directories and PDF files only
+      final filteredItems = items.where((item) {
+        if (item is Directory) {
+          // Hide hidden directories
+          final name = item.path.split(Platform.pathSeparator).last;
+          return !name.startsWith('.');
+        } else if (item is File) {
+          return item.path.toLowerCase().endsWith('.pdf');
+        }
+        return false;
+      }).toList();
+
+      setState(() {
+        _currentDirectory = directory;
+        _items = filteredItems;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Impossible d\'accéder à ce dossier: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _goUp() {
+    if (_currentDirectory != null) {
+      final parent = _currentDirectory!.parent;
+      if (parent.path != _currentDirectory!.path) {
+        _navigateToDirectory(parent);
+      }
+    }
+  }
+
+  void _onItemTap(FileSystemEntity item) {
+    if (item is Directory) {
+      _navigateToDirectory(item);
+    } else if (item is File) {
+      Navigator.of(context).pop(item.path);
+    }
+  }
+
+  String _getItemName(FileSystemEntity item) {
+    return item.path.split(Platform.pathSeparator).last;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: RotatedBox(
+          quarterTurns: widget.rotation,
+          child: Column(
+            children: [
+              _buildHeader(),
+              Expanded(child: _buildContent()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      color: Colors.black87,
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close, color: Colors.white),
+            tooltip: 'Annuler',
+          ),
+          IconButton(
+            onPressed: _currentDirectory != null ? _goUp : null,
+            icon: const Icon(Icons.arrow_upward, color: Colors.white),
+            tooltip: 'Dossier parent',
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _currentDirectory?.path ?? 'Sélectionner un PDF',
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                _errorMessage!,
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              if (!_permissionGranted)
+                ElevatedButton(
+                  onPressed: () => openAppSettings(),
+                  child: const Text('Ouvrir les paramètres'),
+                ),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: _requestPermissionAndLoad,
+                child: const Text('Réessayer'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_items.isEmpty) {
+      return const Center(
+        child: Text(
+          'Aucun fichier PDF dans ce dossier',
+          style: TextStyle(color: Colors.white70),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _items.length,
+      itemBuilder: (context, index) {
+        final item = _items[index];
+        final isDirectory = item is Directory;
+        final name = _getItemName(item);
+
+        return ListTile(
+          leading: Icon(
+            isDirectory ? Icons.folder : Icons.picture_as_pdf,
+            color: isDirectory ? Colors.amber : Colors.red,
+          ),
+          title: Text(
+            name,
+            style: const TextStyle(color: Colors.white),
+          ),
+          onTap: () => _onItemTap(item),
+        );
+      },
+    );
   }
 }
