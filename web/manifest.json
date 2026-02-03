@@ -1,6 +1,6 @@
 {
-    "name": "pdf_rotate",
-    "short_name": "pdf_rotate",
+    "name": "leggio",
+    "short_name": "leggio",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

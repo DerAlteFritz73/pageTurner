@@ -1,4 +1,4 @@
-package com.dorian.pdf_rotate
+package com.jmk.leggio
 
 import io.flutter.embedding.android.FlutterActivity
 

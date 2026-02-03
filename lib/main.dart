@@ -4,17 +4,20 @@ import 'package:pdfx/pdfx.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 
+import 'models/annotation.dart';
+import 'widgets/drawing_canvas.dart';
+
 void main() {
-  runApp(const PdfRotateApp());
+  runApp(const LeggioApp());
 }
 
-class PdfRotateApp extends StatelessWidget {
-  const PdfRotateApp({super.key});
+class LeggioApp extends StatelessWidget {
+  const LeggioApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PDF Rotate',
+      title: 'Leggio',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -35,7 +38,7 @@ class PdfViewerPage extends StatefulWidget {
   State<PdfViewerPage> createState() => _PdfViewerPageState();
 }
 
-class _PdfViewerPageState extends State<PdfViewerPage> {
+class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserver {
   PdfDocument? _document;
   PdfPageImage? _pageImage;
   int _currentPage = 0;
@@ -44,10 +47,185 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   String? _errorMessage;
   int _rotation = 1; // 0=0°, 1=90°, 2=180°, 3=270° (défaut: 90°)
 
+  // Annotation state
+  String? _currentPdfPath;
+  AnnotationData? _annotationData;
+  bool _isDrawingMode = false;
+  bool _isEraserMode = false;
+  Color _currentColor = Colors.red;
+  double _currentThickness = 4.0;
+
+  // Available colors and thickness options
+  static const List<Color> _colorOptions = [
+    Colors.black,
+    Colors.red,
+    Colors.blue,
+    Colors.green,
+    Colors.orange,
+    Colors.purple,
+  ];
+  static const List<double> _thicknessOptions = [2.0, 4.0, 8.0];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _saveAnnotations();
     _document?.close();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _saveAnnotations();
+    }
+  }
+
+  Future<void> _saveAnnotations() async {
+    if (_annotationData != null) {
+      try {
+        await _annotationData!.save();
+      } catch (e) {
+        // Silently handle save errors
+      }
+    }
+  }
+
+  Future<void> _loadAnnotations() async {
+    if (_currentPdfPath != null) {
+      _annotationData = await AnnotationData.load(_currentPdfPath!);
+      setState(() {});
+    }
+  }
+
+  List<Stroke> get _currentPageStrokes {
+    return _annotationData?.getStrokesForPage(_currentPage) ?? [];
+  }
+
+  void _onStrokeComplete(Stroke stroke) {
+    if (_annotationData != null) {
+      setState(() {
+        _annotationData!.addStroke(stroke);
+      });
+    }
+  }
+
+  void _onStrokeErased(String strokeId) {
+    if (_annotationData != null) {
+      setState(() {
+        _annotationData!.removeStroke(strokeId);
+      });
+    }
+  }
+
+  void _toggleDrawingMode() {
+    setState(() {
+      _isDrawingMode = !_isDrawingMode;
+      if (_isDrawingMode) {
+        _isEraserMode = false;
+      }
+    });
+  }
+
+  void _toggleEraserMode() {
+    setState(() {
+      _isEraserMode = !_isEraserMode;
+      if (_isEraserMode) {
+        _isDrawingMode = false;
+      }
+    });
+  }
+
+  void _showColorPicker() {
+    showDialog(
+      context: context,
+      builder: (context) => RotatedBox(
+        quarterTurns: _rotation,
+        child: AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text('Couleur', style: TextStyle(color: Colors.white)),
+          content: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _colorOptions.map((color) {
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _currentColor = color;
+                  });
+                  Navigator.of(context).pop();
+                },
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: _currentColor == color
+                          ? Colors.white
+                          : Colors.transparent,
+                      width: 3,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _cycleThickness() {
+    setState(() {
+      final currentIndex = _thicknessOptions.indexOf(_currentThickness);
+      final nextIndex = (currentIndex + 1) % _thicknessOptions.length;
+      _currentThickness = _thicknessOptions[nextIndex];
+    });
+  }
+
+  void _clearCurrentPage() {
+    showDialog(
+      context: context,
+      builder: (context) => RotatedBox(
+        quarterTurns: _rotation,
+        child: AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text('Effacer les annotations',
+              style: TextStyle(color: Colors.white)),
+          content: const Text(
+            'Effacer toutes les annotations de cette page ?',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () {
+                if (_annotationData != null) {
+                  setState(() {
+                    _annotationData!.clearPage(_currentPage);
+                  });
+                }
+                Navigator.of(context).pop();
+              },
+              child:
+                  const Text('Effacer', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _pickAndOpenPdf() async {
@@ -78,7 +256,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
       ),
     );
 
-    if (choice == null) return;
+    if (choice == null || !mounted) return;
 
     String? selectedPath;
 
@@ -111,9 +289,14 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
   }
 
   Future<void> _openPdf(String path) async {
+    // Save current annotations before switching PDFs
+    await _saveAnnotations();
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _isDrawingMode = false;
+      _isEraserMode = false;
     });
 
     try {
@@ -124,8 +307,10 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
         _document = document;
         _totalPages = document.pagesCount;
         _currentPage = 0;
+        _currentPdfPath = path;
       });
 
+      await _loadAnnotations();
       await _renderPage(0);
     } catch (e) {
       setState(() {
@@ -137,6 +322,11 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
 
   Future<void> _renderPage(int pageIndex) async {
     if (_document == null) return;
+
+    // Save annotations when changing pages
+    if (pageIndex != _currentPage) {
+      await _saveAnnotations();
+    }
 
     setState(() {
       _isLoading = true;
@@ -257,15 +447,41 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
       );
     }
 
+    // Disable InteractiveViewer when in drawing/eraser mode
+    final canInteract = !_isDrawingMode && !_isEraserMode;
+
     return InteractiveViewer(
       minScale: 0.5,
-      maxScale: 4.0,
+      maxScale: canInteract ? 4.0 : 1.0,
+      panEnabled: canInteract,
+      scaleEnabled: canInteract,
       child: Center(
         child: RotatedBox(
           quarterTurns: _rotation,
-          child: Image.memory(
-            _pageImage!.bytes,
-            fit: BoxFit.contain,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return Stack(
+                children: [
+                  Image.memory(
+                    _pageImage!.bytes,
+                    fit: BoxFit.contain,
+                  ),
+                  Positioned.fill(
+                    child: DrawingCanvas(
+                      strokes: _currentPageStrokes,
+                      isDrawingMode: _isDrawingMode,
+                      isEraserMode: _isEraserMode,
+                      currentColor: _currentColor,
+                      currentThickness: _currentThickness,
+                      currentPageIndex: _currentPage,
+                      rotation: _rotation,
+                      onStrokeComplete: _onStrokeComplete,
+                      onStrokeErased: _onStrokeErased,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -317,6 +533,96 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
       color: Colors.white,
     );
 
+    // Annotation controls (only show when PDF is open)
+    final penButton = _document != null
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: IconButton(
+              onPressed: _toggleDrawingMode,
+              icon: Icon(
+                Icons.edit,
+                color: _isDrawingMode ? _currentColor : Colors.white,
+              ),
+              tooltip: 'Dessiner',
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final colorButton = _document != null
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: IconButton(
+              onPressed: _showColorPicker,
+              icon: Icon(
+                Icons.palette,
+                color: _currentColor,
+              ),
+              tooltip: 'Couleur',
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final thicknessButton = _document != null
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: IconButton(
+              onPressed: _cycleThickness,
+              icon: Icon(
+                _currentThickness <= 2.0
+                    ? Icons.line_weight
+                    : _currentThickness <= 4.0
+                        ? Icons.horizontal_rule
+                        : Icons.maximize,
+                color: Colors.white,
+              ),
+              tooltip: 'Épaisseur',
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final eraserButton = _document != null
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: IconButton(
+              onPressed: _toggleEraserMode,
+              icon: Icon(
+                Icons.auto_fix_high,
+                color: _isEraserMode ? Colors.yellow : Colors.white,
+              ),
+              tooltip: 'Gomme',
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final clearButton = _document != null
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: IconButton(
+              onPressed: _clearCurrentPage,
+              icon: const Icon(
+                Icons.delete_outline,
+                color: Colors.white,
+              ),
+              tooltip: 'Effacer tout',
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final separator = _document != null
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: Container(
+              width: isVertical ? 24 : 1,
+              height: isVertical ? 1 : 24,
+              color: Colors.white38,
+              margin: EdgeInsets.symmetric(
+                horizontal: isVertical ? 0 : 8,
+                vertical: isVertical ? 8 : 0,
+              ),
+            ),
+          )
+        : const SizedBox.shrink();
+
     if (isVertical) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -333,6 +639,18 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
             pageCounter,
             const SizedBox(height: 8),
             nextButton,
+            if (_document != null) ...[
+              separator,
+              penButton,
+              const SizedBox(height: 4),
+              colorButton,
+              const SizedBox(height: 4),
+              thicknessButton,
+              const SizedBox(height: 4),
+              eraserButton,
+              const SizedBox(height: 4),
+              clearButton,
+            ],
           ],
         ),
       );
@@ -352,6 +670,14 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
             pageCounter,
             const SizedBox(width: 8),
             nextButton,
+            if (_document != null) ...[
+              separator,
+              penButton,
+              colorButton,
+              thicknessButton,
+              eraserButton,
+              clearButton,
+            ],
           ],
         ),
       );
