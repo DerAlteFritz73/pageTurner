@@ -47,6 +47,10 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   String? _errorMessage;
   int _rotation = 1; // 0=0°, 1=90°, 2=180°, 3=270° (défaut: 90°)
 
+  // Swipe / zoom state
+  final TransformationController _transformationController = TransformationController();
+  bool _isZoomed = false;
+
   // Annotation state
   String? _currentPdfPath;
   AnnotationData? _annotationData;
@@ -70,14 +74,27 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _transformationController.addListener(_onTransformChanged);
   }
 
   @override
   void dispose() {
+    _transformationController.removeListener(_onTransformChanged);
+    _transformationController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _saveAnnotations();
     _document?.close();
     super.dispose();
+  }
+
+  void _onTransformChanged() {
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    final zoomed = scale > 1.05;
+    if (zoomed != _isZoomed) {
+      setState(() {
+        _isZoomed = zoomed;
+      });
+    }
   }
 
   @override
@@ -332,6 +349,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       _isLoading = true;
     });
 
+    _transformationController.value = Matrix4.identity();
+
     try {
       final page = await _document!.getPage(pageIndex + 1);
       final pageImage = await page.render(
@@ -449,13 +468,26 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
 
     // Disable InteractiveViewer when in drawing/eraser mode
     final canInteract = !_isDrawingMode && !_isEraserMode;
+    final canSwipe = canInteract && !_isZoomed && _document != null;
 
-    return InteractiveViewer(
-      minScale: 0.5,
-      maxScale: canInteract ? 4.0 : 1.0,
-      panEnabled: canInteract,
-      scaleEnabled: canInteract,
-      child: Center(
+    return GestureDetector(
+      onHorizontalDragEnd: canSwipe
+          ? (details) {
+              final velocity = details.primaryVelocity ?? 0;
+              if (velocity < -300) {
+                _nextPage();
+              } else if (velocity > 300) {
+                _previousPage();
+              }
+            }
+          : null,
+      child: InteractiveViewer(
+        transformationController: _transformationController,
+        minScale: 0.5,
+        maxScale: canInteract ? 4.0 : 1.0,
+        panEnabled: canInteract && _isZoomed,
+        scaleEnabled: canInteract,
+        child: Center(
         child: RotatedBox(
           quarterTurns: _rotation,
           child: LayoutBuilder(
@@ -484,6 +516,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
             },
           ),
         ),
+      ),
       ),
     );
   }
