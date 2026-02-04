@@ -1,0 +1,37 @@
+#!/bin/sh
+#
+# Pre-commit hook: auto-increment version in pubspec.yaml
+# Versioning scheme: <major>.<minor>.<patch>+<build>
+# Each commit bumps patch and build by 1.
+
+PUBSPEC="pubspec.yaml"
+
+# Read current version line
+VERSION_LINE=$(grep '^version:' "$PUBSPEC")
+if [ -z "$VERSION_LINE" ]; then
+    echo "Error: Could not find version in $PUBSPEC"
+    exit 1
+fi
+
+# Extract version parts (e.g., 0.1.0+1)
+VERSION=$(echo "$VERSION_LINE" | sed 's/version: //')
+VERSION_NAME=$(echo "$VERSION" | cut -d'+' -f1)
+BUILD_NUMBER=$(echo "$VERSION" | cut -d'+' -f2)
+
+# Extract minor version (second number)
+MAJOR=$(echo "$VERSION_NAME" | cut -d'.' -f1)
+MINOR=$(echo "$VERSION_NAME" | cut -d'.' -f2)
+PATCH=$(echo "$VERSION_NAME" | cut -d'.' -f3)
+
+# Increment patch and build number
+NEW_PATCH=$((PATCH + 1))
+NEW_BUILD=$((BUILD_NUMBER + 1))
+NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}+${NEW_BUILD}"
+
+# Update pubspec.yaml
+sed -i "s/^version: .*/version: ${NEW_VERSION}/" "$PUBSPEC"
+
+# Stage the updated pubspec.yaml
+git add "$PUBSPEC"
+
+echo "Version bumped: ${VERSION} -> ${NEW_VERSION}"
