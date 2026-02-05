@@ -5,10 +5,29 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 
 import 'models/annotation.dart';
+import 'services/display_manager_service.dart';
 import 'widgets/drawing_canvas.dart';
+import 'widgets/presentation_display.dart';
 
 void main() {
   runApp(const LeggioApp());
+}
+
+@pragma('vm:entry-point')
+void secondaryDisplayMain() {
+  runApp(
+    MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
+      home: const PresentationDisplayScreen(),
+    ),
+  );
 }
 
 class LeggioApp extends StatelessWidget {
@@ -47,6 +66,10 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   String? _errorMessage;
   int _rotation = 1; // 0=0°, 1=90°, 2=180°, 3=270° (défaut: 90°)
 
+  // Secondary display state
+  final DisplayManagerService _displayService = DisplayManagerService();
+  bool _hasSecondaryDisplay = false;
+
   // Swipe / zoom state
   final TransformationController _transformationController = TransformationController();
   bool _isZoomed = false;
@@ -75,10 +98,21 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _transformationController.addListener(_onTransformChanged);
+    _displayService.init(
+      onDisplayStatusChanged: (hasDisplay) {
+        setState(() {
+          _hasSecondaryDisplay = hasDisplay;
+        });
+        if (hasDisplay && _pageImage != null) {
+          _syncFullStateToPresentation();
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
+    _displayService.dispose();
     _transformationController.removeListener(_onTransformChanged);
     _transformationController.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -95,6 +129,17 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         _isZoomed = zoomed;
       });
     }
+  }
+
+  Future<void> _syncFullStateToPresentation() async {
+    if (!_hasSecondaryDisplay || _pageImage == null) return;
+    await _displayService.sendFullSync(
+      currentPage: _currentPage,
+      totalPages: _totalPages,
+      rotation: _rotation,
+      pageImageBytes: _pageImage!.bytes,
+      strokes: _currentPageStrokes,
+    );
   }
 
   @override
@@ -122,6 +167,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     }
   }
 
+  int get _effectiveRotation => _hasSecondaryDisplay ? 0 : _rotation;
+
   List<Stroke> get _currentPageStrokes {
     return _annotationData?.getStrokesForPage(_currentPage) ?? [];
   }
@@ -131,6 +178,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       setState(() {
         _annotationData!.addStroke(stroke);
       });
+      _displayService.sendStrokeAdded(stroke);
     }
   }
 
@@ -139,6 +187,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       setState(() {
         _annotationData!.removeStroke(strokeId);
       });
+      _displayService.sendStrokeRemoved(strokeId);
     }
   }
 
@@ -164,7 +213,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     showDialog(
       context: context,
       builder: (context) => RotatedBox(
-        quarterTurns: _rotation,
+        quarterTurns: _effectiveRotation,
         child: AlertDialog(
           backgroundColor: Colors.grey[900],
           title: const Text('Couleur', style: TextStyle(color: Colors.white)),
@@ -213,7 +262,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     showDialog(
       context: context,
       builder: (context) => RotatedBox(
-        quarterTurns: _rotation,
+        quarterTurns: _effectiveRotation,
         child: AlertDialog(
           backgroundColor: Colors.grey[900],
           title: const Text('Effacer les annotations',
@@ -233,6 +282,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                   setState(() {
                     _annotationData!.clearPage(_currentPage);
                   });
+                  _displayService.sendStrokesCleared(_currentPage);
                 }
                 Navigator.of(context).pop();
               },
@@ -249,7 +299,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     final choice = await showDialog<String>(
       context: context,
       builder: (context) => RotatedBox(
-        quarterTurns: _rotation,
+        quarterTurns: _effectiveRotation,
         child: AlertDialog(
           backgroundColor: Colors.grey[900],
           title: const Text('Ouvrir un PDF', style: TextStyle(color: Colors.white)),
@@ -366,6 +416,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         _currentPage = pageIndex;
         _isLoading = false;
       });
+
+      _syncFullStateToPresentation();
     } catch (e) {
       setState(() {
         _errorMessage = 'Erreur lors du rendu: $e';
@@ -390,6 +442,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     setState(() {
       _rotation = (_rotation + 1) % 4; // Cycle: 0 -> 1 -> 2 -> 3 -> 0
     });
+    _syncFullStateToPresentation();
   }
 
   @override
@@ -406,8 +459,11 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     final content = Expanded(child: _buildContent());
     final controls = _buildControls();
 
+    // When secondary display is connected, phone always uses portrait layout
+    final effectiveRotation = _effectiveRotation;
+
     // For 90° and 270° rotations, use horizontal layout with controls on the side
-    if (_rotation == 1) {
+    if (effectiveRotation == 1) {
       // 90° clockwise - controls on left (visual bottom when reading rotated content)
       return Row(
         children: [
@@ -415,7 +471,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
           content,
         ],
       );
-    } else if (_rotation == 3) {
+    } else if (effectiveRotation == 3) {
       // 270° clockwise - controls on right (visual bottom when reading rotated content)
       return Row(
         children: [
@@ -457,7 +513,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     if (_pageImage == null) {
       return Center(
         child: RotatedBox(
-          quarterTurns: _rotation,
+          quarterTurns: _effectiveRotation,
           child: const Text(
             'Aucun PDF sélectionné',
             style: TextStyle(color: Colors.white, fontSize: 18),
@@ -489,7 +545,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         scaleEnabled: canInteract,
         child: Center(
         child: RotatedBox(
-          quarterTurns: _rotation,
+          quarterTurns: _effectiveRotation,
           child: LayoutBuilder(
             builder: (context, constraints) {
               return Stack(
@@ -506,7 +562,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                       currentColor: _currentColor,
                       currentThickness: _currentThickness,
                       currentPageIndex: _currentPage,
-                      rotation: _rotation,
+                      rotation: _effectiveRotation,
                       onStrokeComplete: _onStrokeComplete,
                       onStrokeErased: _onStrokeErased,
                     ),
@@ -522,7 +578,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   }
 
   Widget _buildControls() {
-    final isVertical = _rotation == 1 || _rotation == 3;
+    final effectiveRotation = _effectiveRotation;
+    final isVertical = effectiveRotation == 1 || effectiveRotation == 3;
 
     final previousButton = IconButton(
       onPressed: _currentPage > 0 ? _previousPage : null,
@@ -544,9 +601,13 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       quarterTurns: isVertical ? _rotation : 0,
       child: IconButton(
         onPressed: _rotateRight,
-        icon: const Icon(Icons.rotate_right),
-        color: Colors.white,
-        tooltip: '${_rotation * 90}°',
+        icon: Icon(
+          Icons.rotate_right,
+          color: _hasSecondaryDisplay ? Colors.lightBlueAccent : Colors.white,
+        ),
+        tooltip: _hasSecondaryDisplay
+            ? 'Écran externe: ${_rotation * 90}°'
+            : '${_rotation * 90}°',
       ),
     );
 
