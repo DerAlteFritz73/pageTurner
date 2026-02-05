@@ -14,6 +14,7 @@ class DrawingCanvas extends StatefulWidget {
   final int rotation; // 0, 1, 2, or 3 (quarter turns)
   final void Function(Stroke stroke) onStrokeComplete;
   final void Function(String strokeId) onStrokeErased;
+  final void Function(List<Offset> points)? onLivePointsChanged;
 
   const DrawingCanvas({
     super.key,
@@ -26,6 +27,7 @@ class DrawingCanvas extends StatefulWidget {
     required this.rotation,
     required this.onStrokeComplete,
     required this.onStrokeErased,
+    this.onLivePointsChanged,
   });
 
   @override
@@ -104,6 +106,7 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
         _isDrawing = true;
         _currentPoints = [_transformPoint(localPosition, size)];
       });
+      widget.onLivePointsChanged?.call(List.unmodifiable(_currentPoints));
     }
   }
 
@@ -118,6 +121,7 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
       setState(() {
         _currentPoints.add(_transformPoint(localPosition, size));
       });
+      widget.onLivePointsChanged?.call(List.unmodifiable(_currentPoints));
     }
   }
 
@@ -138,6 +142,7 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
       _isDrawing = false;
       _currentPoints = [];
     });
+    widget.onLivePointsChanged?.call(const []);
   }
 
   void _tryEraseStroke(Offset screenPoint, Size size) {

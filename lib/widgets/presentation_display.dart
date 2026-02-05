@@ -25,6 +25,11 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
   int _totalPages = 0;
   int _rotation = 0;
 
+  // Live stroke preview
+  List<Offset> _livePoints = [];
+  Color _liveColor = Colors.transparent;
+  double _liveThickness = 0;
+
   @override
   void initState() {
     super.initState();
@@ -70,6 +75,19 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
         case 'strokesCleared':
           _strokes.clear();
           break;
+        case 'liveStroke':
+          _livePoints = (data['points'] as List)
+              .map((p) => Offset(
+                    (p['x'] as num).toDouble(),
+                    (p['y'] as num).toDouble(),
+                  ))
+              .toList();
+          _liveColor = Color(data['color'] as int);
+          _liveThickness = (data['thickness'] as num).toDouble();
+          break;
+        case 'liveStrokeClear':
+          _livePoints = [];
+          break;
       }
     });
   }
@@ -107,9 +125,9 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                                 size: size,
                                 painter: DrawingCanvasPainter(
                                   strokes: _strokes,
-                                  currentPoints: const [],
-                                  currentColor: Colors.transparent,
-                                  currentThickness: 0,
+                                  currentPoints: _livePoints,
+                                  currentColor: _liveColor,
+                                  currentThickness: _liveThickness,
                                   rotation: _rotation,
                                 ),
                               );

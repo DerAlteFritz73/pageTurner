@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui';
 
 import 'package:flutter_presentation_display/flutter_presentation_display.dart';
 
@@ -12,6 +13,7 @@ class DisplayManagerService {
   bool _isSecondaryDisplayActive = false;
   int? _secondaryDisplayId;
   StreamSubscription? _displayChangeSub;
+  DateTime _lastLiveUpdate = DateTime.now();
 
   bool get isSecondaryDisplayActive => _isSecondaryDisplayActive;
 
@@ -86,6 +88,33 @@ class DisplayManagerService {
       'action': 'strokeRemoved',
       'strokeId': strokeId,
     });
+    await _displayManager.transferDataToPresentation(data);
+  }
+
+  Future<void> sendLiveStroke({
+    required List<Offset> points,
+    required Color color,
+    required double thickness,
+  }) async {
+    if (!_isSecondaryDisplayActive) return;
+    final now = DateTime.now();
+    if (now.difference(_lastLiveUpdate).inMilliseconds < 50) return;
+    _lastLiveUpdate = now;
+    final data = jsonEncode({
+      'action': 'liveStroke',
+      'points': points.map((p) => {'x': p.dx, 'y': p.dy}).toList(),
+      'color': ((color.a * 255).round() << 24) |
+          ((color.r * 255).round() << 16) |
+          ((color.g * 255).round() << 8) |
+          (color.b * 255).round(),
+      'thickness': thickness,
+    });
+    await _displayManager.transferDataToPresentation(data);
+  }
+
+  Future<void> clearLiveStroke() async {
+    if (!_isSecondaryDisplayActive) return;
+    final data = jsonEncode({'action': 'liveStrokeClear'});
     await _displayManager.transferDataToPresentation(data);
   }
 

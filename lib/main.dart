@@ -565,6 +565,19 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                       rotation: _effectiveRotation,
                       onStrokeComplete: _onStrokeComplete,
                       onStrokeErased: _onStrokeErased,
+                      onLivePointsChanged: _hasSecondaryDisplay
+                          ? (points) {
+                              if (points.isEmpty) {
+                                _displayService.clearLiveStroke();
+                              } else {
+                                _displayService.sendLiveStroke(
+                                  points: points,
+                                  color: _currentColor,
+                                  thickness: _currentThickness,
+                                );
+                              }
+                            }
+                          : null,
                     ),
                   ),
                 ],
