@@ -9,45 +9,45 @@ import 'services/display_manager_service.dart';
 import 'widgets/drawing_canvas.dart';
 import 'widgets/presentation_display.dart';
 
+final _theme = ThemeData(
+  colorScheme: ColorScheme.fromSeed(
+    seedColor: Colors.deepPurple,
+    brightness: Brightness.dark,
+  ),
+  useMaterial3: true,
+);
+
+Route<dynamic> _generateRoute(RouteSettings settings) {
+  switch (settings.name) {
+    case 'presentation':
+      return MaterialPageRoute(
+        builder: (_) => const PresentationDisplayScreen(),
+      );
+    default:
+      return MaterialPageRoute(
+        builder: (_) => const PdfViewerPage(),
+      );
+  }
+}
+
 void main() {
-  runApp(const LeggioApp());
+  runApp(MaterialApp(
+    title: 'Leggio',
+    debugShowCheckedModeBanner: false,
+    theme: _theme,
+    onGenerateRoute: _generateRoute,
+    initialRoute: '/',
+  ));
 }
 
 @pragma('vm:entry-point')
 void secondaryDisplayMain() {
-  runApp(
-    MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.deepPurple,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
-      home: const PresentationDisplayScreen(),
-    ),
-  );
-}
-
-class LeggioApp extends StatelessWidget {
-  const LeggioApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Leggio',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.deepPurple,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
-      home: const PdfViewerPage(),
-    );
-  }
+  runApp(MaterialApp(
+    debugShowCheckedModeBanner: false,
+    theme: _theme,
+    onGenerateRoute: _generateRoute,
+    initialRoute: 'presentation',
+  ));
 }
 
 class PdfViewerPage extends StatefulWidget {
