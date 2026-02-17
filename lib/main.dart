@@ -81,6 +81,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   bool _isEraserMode = false;
   Color _currentColor = Colors.red;
   double _currentThickness = 4.0;
+  double _imageAspectRatio = 1.0;
 
   // Available colors and thickness options
   static const List<Color> _colorOptions = [
@@ -139,6 +140,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       rotation: _rotation,
       pageImageBytes: _pageImage!.bytes,
       strokes: _currentPageStrokes,
+      imageAspectRatio: _imageAspectRatio,
     );
   }
 
@@ -409,11 +411,13 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         format: PdfPageImageFormat.png,
         backgroundColor: '#FFFFFF',
       );
+      final aspectRatio = page.width / page.height;
       await page.close();
 
       setState(() {
         _pageImage = pageImage;
         _currentPage = pageIndex;
+        _imageAspectRatio = aspectRatio;
         _isLoading = false;
       });
 
@@ -562,7 +566,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                       currentColor: _currentColor,
                       currentThickness: _currentThickness,
                       currentPageIndex: _currentPage,
-                      rotation: _effectiveRotation,
+                      imageAspectRatio: _imageAspectRatio,
                       onStrokeComplete: _onStrokeComplete,
                       onStrokeErased: _onStrokeErased,
                       onLivePointsChanged: _hasSecondaryDisplay
@@ -630,6 +634,17 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
             child: Text(
               '${_currentPage + 1} / $_totalPages',
               style: const TextStyle(color: Colors.white),
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final castIndicator = _hasSecondaryDisplay
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: const Icon(
+              Icons.cast_connected,
+              color: Colors.greenAccent,
+              size: 20,
             ),
           )
         : const SizedBox.shrink();
@@ -737,6 +752,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            castIndicator,
             previousButton,
             const SizedBox(height: 8),
             openButton,
@@ -768,6 +784,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            castIndicator,
             previousButton,
             const SizedBox(width: 8),
             openButton,

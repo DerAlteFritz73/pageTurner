@@ -31,14 +31,22 @@ class DisplayManagerService {
     void Function(bool) onDisplayStatusChanged,
   ) async {
     final displays = await _displayManager.getDisplays();
+    print('DisplayManager: found ${displays?.length ?? 0} displays');
+    if (displays != null) {
+      for (int i = 0; i < displays.length; i++) {
+        print('  Display $i: id=${displays[i].displayId}, name=${displays[i].name}');
+      }
+    }
     if (displays != null && displays.length > 1) {
       final secondaryDisplay = displays[1];
       _secondaryDisplayId = secondaryDisplay.displayId;
       if (!_isSecondaryDisplayActive) {
-        await _displayManager.showSecondaryDisplay(
+        print('DisplayManager: showing secondary display on id=$_secondaryDisplayId');
+        final result = await _displayManager.showSecondaryDisplay(
           displayId: _secondaryDisplayId!,
           routerName: 'presentation',
         );
+        print('DisplayManager: showSecondaryDisplay result=$result');
         _isSecondaryDisplayActive = true;
       }
       onDisplayStatusChanged(true);
@@ -60,6 +68,7 @@ class DisplayManagerService {
     required int rotation,
     required List<int> pageImageBytes,
     required List<Stroke> strokes,
+    required double imageAspectRatio,
   }) async {
     if (!_isSecondaryDisplayActive) return;
     final data = jsonEncode({
@@ -69,6 +78,7 @@ class DisplayManagerService {
       'rotation': rotation,
       'pageImageBase64': base64Encode(pageImageBytes),
       'strokes': strokes.map((s) => s.toJson()).toList(),
+      'imageAspectRatio': imageAspectRatio,
     });
     await _displayManager.transferDataToPresentation(data);
   }

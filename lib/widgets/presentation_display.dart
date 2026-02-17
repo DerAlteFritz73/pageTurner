@@ -24,6 +24,7 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
   int _currentPage = 0;
   int _totalPages = 0;
   int _rotation = 0;
+  double _imageAspectRatio = 1.0;
 
   // Live stroke preview
   List<Offset> _livePoints = [];
@@ -54,6 +55,7 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
           _currentPage = data['currentPage'] as int;
           _totalPages = data['totalPages'] as int;
           _rotation = data['rotation'] as int;
+          _imageAspectRatio = (data['imageAspectRatio'] as num?)?.toDouble() ?? 1.0;
           if (data['pageImageBase64'] != null) {
             _pageImageBytes =
                 base64Decode(data['pageImageBase64'] as String);
@@ -128,7 +130,7 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                                   currentPoints: _livePoints,
                                   currentColor: _liveColor,
                                   currentThickness: _liveThickness,
-                                  rotation: _rotation,
+                                  imageAspectRatio: _imageAspectRatio,
                                 ),
                               );
                             },
