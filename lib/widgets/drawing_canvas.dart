@@ -11,7 +11,7 @@ class DrawingCanvas extends StatefulWidget {
   final Color currentColor;
   final double currentThickness;
   final int currentPageIndex;
-  final int rotation; // 0, 1, 2, or 3 (quarter turns)
+  final double imageAspectRatio; // width / height of the PDF page
   final void Function(Stroke stroke) onStrokeComplete;
   final void Function(String strokeId) onStrokeErased;
   final void Function(List<Offset> points)? onLivePointsChanged;
@@ -24,7 +24,7 @@ class DrawingCanvas extends StatefulWidget {
     required this.currentColor,
     required this.currentThickness,
     required this.currentPageIndex,
-    required this.rotation,
+    required this.imageAspectRatio,
     required this.onStrokeComplete,
     required this.onStrokeErased,
     this.onLivePointsChanged,
@@ -38,60 +38,39 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
   List<Offset> _currentPoints = [];
   bool _isDrawing = false;
 
-  Offset _transformPoint(Offset point, Size size) {
-    // Transform screen coordinates to normalized coordinates (0-1)
-    // taking rotation into account
-    double x = point.dx;
-    double y = point.dy;
-
-    // First, transform based on rotation
-    switch (widget.rotation) {
-      case 1: // 90° clockwise
-        final temp = x;
-        x = y;
-        y = size.width - temp;
-        // After rotation, swap dimensions
-        return Offset(x / size.height, y / size.width);
-      case 2: // 180°
-        x = size.width - x;
-        y = size.height - y;
-        return Offset(x / size.width, y / size.height);
-      case 3: // 270° clockwise
-        final temp = x;
-        x = size.height - y;
-        y = temp;
-        // After rotation, swap dimensions
-        return Offset(x / size.height, y / size.width);
-      default: // 0°
-        return Offset(x / size.width, y / size.height);
+  /// Computes the display rect of the image within the container,
+  /// matching BoxFit.contain behavior.
+  Rect _getImageRect(Size containerSize) {
+    final ar = widget.imageAspectRatio;
+    double imageWidth, imageHeight;
+    if (containerSize.width / containerSize.height > ar) {
+      imageHeight = containerSize.height;
+      imageWidth = imageHeight * ar;
+    } else {
+      imageWidth = containerSize.width;
+      imageHeight = imageWidth / ar;
     }
+    final left = (containerSize.width - imageWidth) / 2;
+    final top = (containerSize.height - imageHeight) / 2;
+    return Rect.fromLTWH(left, top, imageWidth, imageHeight);
+  }
+
+  Offset _transformPoint(Offset point, Size size) {
+    // Transform screen coordinates to image-relative normalized coordinates (0-1)
+    final imageRect = _getImageRect(size);
+    return Offset(
+      (point.dx - imageRect.left) / imageRect.width,
+      (point.dy - imageRect.top) / imageRect.height,
+    );
   }
 
   Offset _untransformPoint(Offset normalized, Size size) {
-    // Transform normalized coordinates (0-1) back to screen coordinates
-    // taking rotation into account
-    double x = normalized.dx;
-    double y = normalized.dy;
-
-    switch (widget.rotation) {
-      case 1: // 90° clockwise
-        // Reverse: x = y/h, y = (w-temp)/w => temp = w - y*w, y_screen = x*h
-        final screenX = size.width - y * size.width;
-        final screenY = x * size.height;
-        return Offset(screenX, screenY);
-      case 2: // 180°
-        return Offset(
-          size.width - x * size.width,
-          size.height - y * size.height,
-        );
-      case 3: // 270° clockwise
-        // Reverse transformation
-        final screenX = y * size.width;
-        final screenY = size.height - x * size.height;
-        return Offset(screenX, screenY);
-      default: // 0°
-        return Offset(x * size.width, y * size.height);
-    }
+    // Transform image-relative normalized coordinates back to screen coordinates
+    final imageRect = _getImageRect(size);
+    return Offset(
+      normalized.dx * imageRect.width + imageRect.left,
+      normalized.dy * imageRect.height + imageRect.top,
+    );
   }
 
   void _onPanStart(DragStartDetails details, Size size) {
@@ -181,7 +160,7 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
                 currentPoints: _currentPoints,
                 currentColor: widget.currentColor,
                 currentThickness: widget.currentThickness,
-                rotation: widget.rotation,
+                imageAspectRatio: widget.imageAspectRatio,
               ),
             ),
           ),
@@ -196,37 +175,37 @@ class DrawingCanvasPainter extends CustomPainter {
   final List<Offset> currentPoints;
   final Color currentColor;
   final double currentThickness;
-  final int rotation;
+  final double imageAspectRatio;
 
   DrawingCanvasPainter({
     required this.strokes,
     required this.currentPoints,
     required this.currentColor,
     required this.currentThickness,
-    required this.rotation,
+    required this.imageAspectRatio,
   });
 
-  Offset _untransformPoint(Offset normalized, Size size) {
-    double x = normalized.dx;
-    double y = normalized.dy;
-
-    switch (rotation) {
-      case 1: // 90° clockwise
-        final screenX = size.width - y * size.width;
-        final screenY = x * size.height;
-        return Offset(screenX, screenY);
-      case 2: // 180°
-        return Offset(
-          size.width - x * size.width,
-          size.height - y * size.height,
-        );
-      case 3: // 270° clockwise
-        final screenX = y * size.width;
-        final screenY = size.height - x * size.height;
-        return Offset(screenX, screenY);
-      default: // 0°
-        return Offset(x * size.width, y * size.height);
+  Rect _getImageRect(Size containerSize) {
+    final ar = imageAspectRatio;
+    double imageWidth, imageHeight;
+    if (containerSize.width / containerSize.height > ar) {
+      imageHeight = containerSize.height;
+      imageWidth = imageHeight * ar;
+    } else {
+      imageWidth = containerSize.width;
+      imageHeight = imageWidth / ar;
     }
+    final left = (containerSize.width - imageWidth) / 2;
+    final top = (containerSize.height - imageHeight) / 2;
+    return Rect.fromLTWH(left, top, imageWidth, imageHeight);
+  }
+
+  Offset _untransformPoint(Offset normalized, Size size) {
+    final imageRect = _getImageRect(size);
+    return Offset(
+      normalized.dx * imageRect.width + imageRect.left,
+      normalized.dy * imageRect.height + imageRect.top,
+    );
   }
 
   @override
@@ -282,6 +261,6 @@ class DrawingCanvasPainter extends CustomPainter {
         currentPoints != oldDelegate.currentPoints ||
         currentColor != oldDelegate.currentColor ||
         currentThickness != oldDelegate.currentThickness ||
-        rotation != oldDelegate.rotation;
+        imageAspectRatio != oldDelegate.imageAspectRatio;
   }
 }
