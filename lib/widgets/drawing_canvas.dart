@@ -145,13 +145,14 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
 
+        final active = widget.isDrawingMode || widget.isEraserMode;
         return GestureDetector(
-          behavior: (widget.isDrawingMode || widget.isEraserMode)
+          behavior: active
               ? HitTestBehavior.opaque
               : HitTestBehavior.translucent,
-          onPanStart: (details) => _onPanStart(details, size),
-          onPanUpdate: (details) => _onPanUpdate(details, size),
-          onPanEnd: _onPanEnd,
+          onPanStart: active ? (details) => _onPanStart(details, size) : null,
+          onPanUpdate: active ? (details) => _onPanUpdate(details, size) : null,
+          onPanEnd: active ? _onPanEnd : null,
           child: RepaintBoundary(
             child: CustomPaint(
               size: size,
