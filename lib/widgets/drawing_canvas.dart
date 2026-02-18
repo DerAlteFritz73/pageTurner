@@ -7,7 +7,6 @@ import '../models/annotation.dart';
 
 class DrawingCanvas extends StatefulWidget {
   final List<Stroke> strokes;
-  final bool isDrawingMode;
   final bool isEraserMode;
   final Color currentColor;
   final double currentThickness;
@@ -21,7 +20,6 @@ class DrawingCanvas extends StatefulWidget {
   const DrawingCanvas({
     super.key,
     required this.strokes,
-    required this.isDrawingMode,
     required this.isEraserMode,
     required this.currentColor,
     required this.currentThickness,
@@ -79,7 +77,6 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
 
   void _onPointerDown(PointerDownEvent event, Size size) {
     if (!_isStylusKind(event.kind)) return;
-    if (!widget.isDrawingMode && !widget.isEraserMode) return;
 
     _activePointerId = event.pointer;
     widget.onStylusStateChanged?.call(true);
