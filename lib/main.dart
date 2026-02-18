@@ -331,6 +331,63 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     );
   }
 
+  void _showParamsMenu() {
+    showDialog(
+      context: context,
+      builder: (context) => RotatedBox(
+        quarterTurns: _effectiveRotation,
+        child: AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text('Paramètres', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Rotation
+              ListTile(
+                leading: Icon(
+                  Icons.rotate_right,
+                  color: _hasSecondaryDisplay ? Colors.lightBlueAccent : Colors.white,
+                ),
+                title: Text(
+                  _hasSecondaryDisplay
+                      ? 'Écran externe: ${_rotation * 90}°'
+                      : 'Rotation: ${_rotation * 90}°',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                onTap: () {
+                  _rotateRight();
+                  Navigator.of(context).pop();
+                },
+              ),
+              const Divider(color: Colors.white24),
+              // Debug info
+              ExpansionTile(
+                leading: const Icon(Icons.bug_report, color: Colors.white54),
+                title: const Text('Debug écrans',
+                    style: TextStyle(color: Colors.white54, fontSize: 14)),
+                iconColor: Colors.white54,
+                collapsedIconColor: Colors.white54,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      _displayService.debugStatus,
+                      style: const TextStyle(
+                        color: Colors.yellow,
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _clearCurrentPage() {
     showDialog(
       context: context,
@@ -525,30 +582,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Stack(
-          children: [
-            _buildLayout(),
-            Positioned(
-              top: 4,
-              left: 4,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.black87,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  _displayService.debugStatus,
-                  style: const TextStyle(
-                    color: Colors.yellow,
-                    fontSize: 10,
-                    fontFamily: 'monospace',
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+        child: _buildLayout(),
       ),
     );
   }
@@ -712,17 +746,13 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       ),
     );
 
-    final rotateButton = RotatedBox(
+    final paramsButton = RotatedBox(
       quarterTurns: isVertical ? _rotation : 0,
       child: IconButton(
-        onPressed: _rotateRight,
-        icon: Icon(
-          Icons.rotate_right,
-          color: _hasSecondaryDisplay ? Colors.lightBlueAccent : Colors.white,
-        ),
-        tooltip: _hasSecondaryDisplay
-            ? 'Écran externe: ${_rotation * 90}°'
-            : '${_rotation * 90}°',
+        onPressed: _showParamsMenu,
+        icon: const Icon(Icons.settings),
+        color: Colors.white,
+        tooltip: 'Paramètres',
       ),
     );
 
@@ -867,7 +897,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
               const SizedBox(height: 8),
               openButton,
               const SizedBox(height: 8),
-              rotateButton,
+              paramsButton,
               const SizedBox(height: 8),
               pageCounter,
               const SizedBox(height: 8),
@@ -902,7 +932,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
               const SizedBox(width: 8),
               openButton,
               const SizedBox(width: 8),
-              rotateButton,
+              paramsButton,
               const SizedBox(width: 8),
               pageCounter,
               const SizedBox(width: 8),
