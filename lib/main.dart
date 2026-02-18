@@ -234,8 +234,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                           border: Border.all(
                             color: tempColor == color
                                 ? Colors.white
-                                : Colors.transparent,
-                            width: 3,
+                                : Colors.white24,
+                            width: tempColor == color ? 3 : 1,
                           ),
                         ),
                       ),
@@ -763,7 +763,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
               onPressed: _showColorPicker,
               icon: Icon(
                 Icons.palette,
-                color: _currentColor,
+                color: _currentColor == Colors.black ? Colors.white : _currentColor,
               ),
               tooltip: 'Couleur',
             ),
