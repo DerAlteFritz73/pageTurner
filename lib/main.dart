@@ -776,7 +776,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
             child: IconButton(
               onPressed: _toggleEraserMode,
               icon: Icon(
-                Icons.auto_fix_high,
+                Icons.cleaning_services,
                 color: _isEraserMode ? Colors.yellow : Colors.white,
               ),
               tooltip: 'Gomme',
