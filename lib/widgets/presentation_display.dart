@@ -97,7 +97,14 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: Scaffold(
       backgroundColor: Colors.black,
       body: _pageImageBytes == null
           ? const Center(
@@ -164,6 +171,7 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                 ),
               ],
             ),
+      ),
     );
   }
 }
