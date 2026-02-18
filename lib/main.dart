@@ -70,9 +70,10 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   final DisplayManagerService _displayService = DisplayManagerService();
   bool _hasSecondaryDisplay = false;
 
-  // Swipe / zoom state
+  // Swipe / zoom / stylus state
   final TransformationController _transformationController = TransformationController();
   bool _isZoomed = false;
+  bool _isStylusDrawing = false;
 
   // Annotation state
   String? _currentPdfPath;
@@ -589,9 +590,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       );
     }
 
-    // Disable InteractiveViewer when in drawing/eraser mode
-    final canInteract = !_isDrawingMode && !_isEraserMode;
-    final canSwipe = canInteract && !_isZoomed && _document != null;
+    // Fingers always interact; stylus drawing disables pan/scale temporarily.
+    final canSwipe = !_isStylusDrawing && !_isZoomed && _document != null;
 
     return GestureDetector(
       onHorizontalDragEnd: canSwipe
@@ -607,9 +607,9 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       child: InteractiveViewer(
         transformationController: _transformationController,
         minScale: 0.5,
-        maxScale: canInteract ? 4.0 : 1.0,
-        panEnabled: canInteract && _isZoomed,
-        scaleEnabled: canInteract,
+        maxScale: 4.0,
+        panEnabled: !_isStylusDrawing && _isZoomed,
+        scaleEnabled: !_isStylusDrawing,
         child: Center(
         child: RotatedBox(
           quarterTurns: _effectiveRotation,
@@ -632,6 +632,11 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                       imageAspectRatio: _imageAspectRatio,
                       onStrokeComplete: _onStrokeComplete,
                       onStrokeErased: _onStrokeErased,
+                      onStylusStateChanged: (isActive) {
+                        if (_isStylusDrawing != isActive) {
+                          setState(() => _isStylusDrawing = isActive);
+                        }
+                      },
                       onLivePointsChanged: _hasSecondaryDisplay
                           ? (points) {
                               if (points.isEmpty) {
@@ -750,10 +755,28 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     final thicknessButton = _document != null
         ? RotatedBox(
             quarterTurns: isVertical ? _rotation : 0,
-            child: IconButton(
-              onPressed: _showThicknessPicker,
-              icon: const Icon(Icons.line_weight, color: Colors.white),
-              tooltip: 'Épaisseur',
+            child: GestureDetector(
+              onTap: _showThicknessPicker,
+              child: Tooltip(
+                message: 'Épaisseur',
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Center(
+                      child: Container(
+                        width: 20,
+                        height: _currentThickness.clamp(1.0, 20.0),
+                        decoration: BoxDecoration(
+                          color: _isDrawingMode ? _currentColor : Colors.white,
+                          borderRadius: BorderRadius.circular(_currentThickness / 2),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           )
         : const SizedBox.shrink();
@@ -805,32 +828,34 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         color: Colors.black54,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            castIndicator,
-            previousButton,
-            const SizedBox(height: 8),
-            openButton,
-            const SizedBox(height: 8),
-            rotateButton,
-            const SizedBox(height: 8),
-            pageCounter,
-            const SizedBox(height: 8),
-            nextButton,
-            if (_document != null) ...[
-              separator,
-              penButton,
-              const SizedBox(height: 4),
-              colorButton,
-              const SizedBox(height: 4),
-              thicknessButton,
-              const SizedBox(height: 4),
-              eraserButton,
-              const SizedBox(height: 4),
-              clearButton,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              castIndicator,
+              previousButton,
+              const SizedBox(height: 8),
+              openButton,
+              const SizedBox(height: 8),
+              rotateButton,
+              const SizedBox(height: 8),
+              pageCounter,
+              const SizedBox(height: 8),
+              nextButton,
+              if (_document != null) ...[
+                separator,
+                penButton,
+                const SizedBox(height: 4),
+                colorButton,
+                const SizedBox(height: 4),
+                thicknessButton,
+                const SizedBox(height: 4),
+                eraserButton,
+                const SizedBox(height: 4),
+                clearButton,
+              ],
             ],
-          ],
+          ),
         ),
       );
     } else {
