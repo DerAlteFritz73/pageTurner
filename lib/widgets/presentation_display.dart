@@ -105,72 +105,75 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
-      backgroundColor: Colors.black,
-      body: _pageImageBytes == null
-          ? const Center(
-              child: Text(
-                'En attente du PDF...',
-                style: TextStyle(color: Colors.white, fontSize: 24),
-              ),
-            )
-          : Stack(
-              children: [
-                Center(
-                  child: RotatedBox(
-                    quarterTurns: _rotation,
-                    child: Stack(
-                      children: [
-                        Image.memory(
-                          _pageImageBytes!,
-                          fit: BoxFit.contain,
+        backgroundColor: Colors.black,
+        body: _pageImageBytes == null
+            ? const Center(
+                child: Text(
+                  'En attente du PDF...',
+                  style: TextStyle(color: Colors.white, fontSize: 24),
+                ),
+              )
+            : Column(
+                children: [
+                  // PDF aligned to top
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: RotatedBox(
+                        quarterTurns: _rotation,
+                        child: Stack(
+                          children: [
+                            Image.memory(
+                              _pageImageBytes!,
+                              fit: BoxFit.contain,
+                            ),
+                            Positioned.fill(
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final size = Size(
+                                    constraints.maxWidth,
+                                    constraints.maxHeight,
+                                  );
+                                  return CustomPaint(
+                                    size: size,
+                                    painter: DrawingCanvasPainter(
+                                      strokes: _strokes,
+                                      currentPoints: _livePoints,
+                                      currentColor: _liveColor,
+                                      currentThickness: _liveThickness,
+                                      imageAspectRatio: _imageAspectRatio,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                         ),
-                        Positioned.fill(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final size = Size(
-                                constraints.maxWidth,
-                                constraints.maxHeight,
-                              );
-                              return CustomPaint(
-                                size: size,
-                                painter: DrawingCanvasPainter(
-                                  strokes: _strokes,
-                                  currentPoints: _livePoints,
-                                  currentColor: _liveColor,
-                                  currentThickness: _liveThickness,
-                                  imageAspectRatio: _imageAspectRatio,
-                                ),
-                              );
-                            },
+                      ),
+                    ),
+                  ),
+                  // Bottom bar
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: Colors.black54,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        RotatedBox(
+                          quarterTurns: _rotation,
+                          child: Text(
+                            '${_currentPage + 1} / $_totalPages',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-                // Page counter overlay
-                Positioned(
-                  bottom: 16,
-                  right: 16,
-                  child: RotatedBox(
-                    quarterTurns: _rotation,
-                    child: Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Text(
-                        '${_currentPage + 1} / $_totalPages',
-                        style:
-                            const TextStyle(color: Colors.white70, fontSize: 16),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+                ],
+              ),
       ),
     );
   }
