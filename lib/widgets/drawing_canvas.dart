@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../models/annotation.dart';
@@ -11,10 +12,11 @@ class DrawingCanvas extends StatefulWidget {
   final Color currentColor;
   final double currentThickness;
   final int currentPageIndex;
-  final double imageAspectRatio; // width / height of the PDF page
+  final double imageAspectRatio;
   final void Function(Stroke stroke) onStrokeComplete;
   final void Function(String strokeId) onStrokeErased;
   final void Function(List<Offset> points)? onLivePointsChanged;
+  final void Function(bool isActive)? onStylusStateChanged;
 
   const DrawingCanvas({
     super.key,
@@ -28,6 +30,7 @@ class DrawingCanvas extends StatefulWidget {
     required this.onStrokeComplete,
     required this.onStrokeErased,
     this.onLivePointsChanged,
+    this.onStylusStateChanged,
   });
 
   @override
@@ -37,9 +40,8 @@ class DrawingCanvas extends StatefulWidget {
 class _DrawingCanvasState extends State<DrawingCanvas> {
   List<Offset> _currentPoints = [];
   bool _isDrawing = false;
+  int? _activePointerId;
 
-  /// Computes the display rect of the image within the container,
-  /// matching BoxFit.contain behavior.
   Rect _getImageRect(Size containerSize) {
     final ar = widget.imageAspectRatio;
     double imageWidth, imageHeight;
@@ -56,7 +58,6 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
   }
 
   Offset _transformPoint(Offset point, Size size) {
-    // Transform screen coordinates to image-relative normalized coordinates (0-1)
     final imageRect = _getImageRect(size);
     return Offset(
       (point.dx - imageRect.left) / imageRect.width,
@@ -65,7 +66,6 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
   }
 
   Offset _untransformPoint(Offset normalized, Size size) {
-    // Transform image-relative normalized coordinates back to screen coordinates
     final imageRect = _getImageRect(size);
     return Offset(
       normalized.dx * imageRect.width + imageRect.left,
@@ -73,39 +73,51 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
     );
   }
 
-  void _onPanStart(DragStartDetails details, Size size) {
+  bool _isStylusKind(PointerDeviceKind kind) =>
+      kind == PointerDeviceKind.stylus ||
+      kind == PointerDeviceKind.invertedStylus;
+
+  void _onPointerDown(PointerDownEvent event, Size size) {
+    if (!_isStylusKind(event.kind)) return;
     if (!widget.isDrawingMode && !widget.isEraserMode) return;
 
-    final localPosition = details.localPosition;
+    _activePointerId = event.pointer;
+    widget.onStylusStateChanged?.call(true);
 
-    if (widget.isEraserMode) {
-      _tryEraseStroke(localPosition, size);
+    final isErasing =
+        widget.isEraserMode || event.kind == PointerDeviceKind.invertedStylus;
+
+    if (isErasing) {
+      _tryEraseStroke(event.localPosition, size);
     } else {
       setState(() {
         _isDrawing = true;
-        _currentPoints = [_transformPoint(localPosition, size)];
+        _currentPoints = [_transformPoint(event.localPosition, size)];
       });
       widget.onLivePointsChanged?.call(List.unmodifiable(_currentPoints));
     }
   }
 
-  void _onPanUpdate(DragUpdateDetails details, Size size) {
-    if (!widget.isDrawingMode && !widget.isEraserMode) return;
+  void _onPointerMove(PointerMoveEvent event, Size size) {
+    if (event.pointer != _activePointerId) return;
 
-    final localPosition = details.localPosition;
+    final isErasing =
+        widget.isEraserMode || event.kind == PointerDeviceKind.invertedStylus;
 
-    if (widget.isEraserMode) {
-      _tryEraseStroke(localPosition, size);
+    if (isErasing) {
+      _tryEraseStroke(event.localPosition, size);
     } else if (_isDrawing) {
       setState(() {
-        _currentPoints.add(_transformPoint(localPosition, size));
+        _currentPoints.add(_transformPoint(event.localPosition, size));
       });
       widget.onLivePointsChanged?.call(List.unmodifiable(_currentPoints));
     }
   }
 
-  void _onPanEnd(DragEndDetails details) {
-    if (!widget.isDrawingMode || widget.isEraserMode) return;
+  void _onPointerUp(PointerUpEvent event, Size size) {
+    if (event.pointer != _activePointerId) return;
+    _activePointerId = null;
+    widget.onStylusStateChanged?.call(false);
 
     if (_isDrawing && _currentPoints.length >= 2) {
       final stroke = Stroke(
@@ -124,14 +136,23 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
     widget.onLivePointsChanged?.call(const []);
   }
 
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _activePointerId) return;
+    _activePointerId = null;
+    widget.onStylusStateChanged?.call(false);
+    setState(() {
+      _isDrawing = false;
+      _currentPoints = [];
+    });
+    widget.onLivePointsChanged?.call(const []);
+  }
+
   void _tryEraseStroke(Offset screenPoint, Size size) {
     const hitRadius = 20.0;
-
     for (final stroke in widget.strokes) {
       for (final normalizedPoint in stroke.points) {
         final strokeScreenPoint = _untransformPoint(normalizedPoint, size);
-        final distance = (strokeScreenPoint - screenPoint).distance;
-        if (distance < hitRadius) {
+        if ((strokeScreenPoint - screenPoint).distance < hitRadius) {
           widget.onStrokeErased(stroke.id);
           return;
         }
@@ -145,14 +166,14 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
 
-        final active = widget.isDrawingMode || widget.isEraserMode;
-        return GestureDetector(
-          behavior: active
-              ? HitTestBehavior.opaque
-              : HitTestBehavior.translucent,
-          onPanStart: active ? (details) => _onPanStart(details, size) : null,
-          onPanUpdate: active ? (details) => _onPanUpdate(details, size) : null,
-          onPanEnd: active ? _onPanEnd : null,
+        // Always translucent: finger events pass through to InteractiveViewer.
+        // Only stylus events are handled here for drawing.
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (e) => _onPointerDown(e, size),
+          onPointerMove: (e) => _onPointerMove(e, size),
+          onPointerUp: (e) => _onPointerUp(e, size),
+          onPointerCancel: (e) => _onPointerCancel(e),
           child: RepaintBoundary(
             child: CustomPaint(
               size: size,
@@ -211,7 +232,6 @@ class DrawingCanvasPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Draw existing strokes
     for (final stroke in strokes) {
       if (stroke.points.length < 2) continue;
 
@@ -230,11 +250,9 @@ class DrawingCanvasPainter extends CustomPainter {
       for (int i = 1; i < screenPoints.length; i++) {
         path.lineTo(screenPoints[i].dx, screenPoints[i].dy);
       }
-
       canvas.drawPath(path, paint);
     }
 
-    // Draw current stroke being drawn
     if (currentPoints.length >= 2) {
       final paint = Paint()
         ..color = currentColor
@@ -251,7 +269,6 @@ class DrawingCanvasPainter extends CustomPainter {
       for (int i = 1; i < screenPoints.length; i++) {
         path.lineTo(screenPoints[i].dx, screenPoints[i].dy);
       }
-
       canvas.drawPath(path, paint);
     }
   }
