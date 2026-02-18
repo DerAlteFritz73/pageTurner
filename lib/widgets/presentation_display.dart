@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_presentation_display/flutter_presentation_display.dart';
 
 import '../models/annotation.dart';
@@ -34,6 +34,7 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
   @override
   void initState() {
     super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _displayManager.listenDataFromMainDisplay(_handleData);
   }
 
