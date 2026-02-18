@@ -1,1 +1,31 @@
-#!/bin/sh\n#\n# Pre-commit hook: auto-increment version in pubspec.yaml\n# Versioning scheme: <major>.<minor>.<patch>+<build>\n# Each commit bumps patch and build by 1.\n\nPUBSPEC="pubspec.yaml"\n\n# Read current version line (strip \r for Windows CRLF compatibility)\nVERSION_LINE=$(grep '^version:' "$PUBSPEC"  | tr -d '\r')\nif [ -z "$VERSION_LINE" ]; then\n    echo "Error: Could not find version in $PUBSPEC"\n    exit 1\nfi\n\n# Extract version parts (e.g., 0.1.0+1)\nVERSION=$(echo "$VERSION_LINE" | sed 's/version: //')\nVERSION_NAME=$(echo "$VERSION" | cut -d'+' -f1)\nBUILD_NUMBER=$(echo "$VERSION" | cut -d'+' -f2)\n\n# Extract patch and build\nMAJOR=$(echo "$VERSION_NAME" | cut -d'.' -f1)\nMINOR=$(echo "$VERSION_NAME" | cut -d'.' -f2)\nPATCH=$(echo "$VERSION_NAME" | cut -d'.' -f3)\n\n# Increment patch and build number\nNEW_PATCH=$((PATCH + 1))\nNEW_BUILD=$((BUILD_NUMBER + 1))\nNEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}+${NEW_BUILD}"\n\n# Update pubspec.yaml\nsed -i "s/^version: .*/version: ${NEW_VERSION}/" "$PUBSPEC"\n\n# Stage the updated pubspec.yaml\ngit add "$PUBSPEC"\n\necho "Version bumped: ${VERSION} -> ${NEW_VERSION}"\n
+#!/bin/sh
+#
+# Pre-commit hook: auto-increment version in pubspec.yaml
+# Versioning scheme: <major>.<minor>.<patch>+<build>
+# Each commit bumps patch and build by 1.
+
+PUBSPEC=pubspec.yaml
+
+VERSION_LINE=$(grep '^version:' $PUBSPEC | tr -d '\r')
+if [ -z "$VERSION_LINE" ]; then
+    echo "Error: Could not find version in $PUBSPEC"
+    exit 1
+fi
+
+VERSION=$(echo "$VERSION_LINE" | sed 's/version: //')
+VERSION_NAME=$(echo "$VERSION" | cut -d'+' -f1)
+BUILD_NUMBER=$(echo "$VERSION" | cut -d'+' -f2)
+
+MAJOR=$(echo "$VERSION_NAME" | cut -d'.' -f1)
+MINOR=$(echo "$VERSION_NAME" | cut -d'.' -f2)
+PATCH=$(echo "$VERSION_NAME" | cut -d'.' -f3)
+
+NEW_PATCH=$((PATCH + 1))
+NEW_BUILD=$((BUILD_NUMBER + 1))
+NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}+${NEW_BUILD}"
+
+sed -i "s/^version: .*/version: ${NEW_VERSION}/" $PUBSPEC
+
+git add $PUBSPEC
+
+echo "Version bumped: ${VERSION} -> ${NEW_VERSION}"
