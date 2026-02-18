@@ -78,7 +78,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   // Annotation state
   String? _currentPdfPath;
   AnnotationData? _annotationData;
-  bool _isDrawingMode = false;
   bool _isEraserMode = false;
   Color _currentColor = Colors.red;
   double _currentThickness = 1.0;
@@ -196,21 +195,9 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     }
   }
 
-  void _toggleDrawingMode() {
-    setState(() {
-      _isDrawingMode = !_isDrawingMode;
-      if (_isDrawingMode) {
-        _isEraserMode = false;
-      }
-    });
-  }
-
   void _toggleEraserMode() {
     setState(() {
       _isEraserMode = !_isEraserMode;
-      if (_isEraserMode) {
-        _isDrawingMode = false;
-      }
     });
   }
 
@@ -480,7 +467,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      _isDrawingMode = false;
       _isEraserMode = false;
     });
 
@@ -676,7 +662,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                   Positioned.fill(
                     child: DrawingCanvas(
                       strokes: _currentPageStrokes,
-                      isDrawingMode: _isDrawingMode,
                       isEraserMode: _isEraserMode,
                       currentColor: _currentColor,
                       currentThickness: _currentThickness,
@@ -772,20 +757,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     );
 
     // Annotation controls (only show when PDF is open)
-    final penButton = _document != null
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: IconButton(
-              onPressed: _toggleDrawingMode,
-              icon: Icon(
-                Icons.edit,
-                color: _isDrawingMode ? _currentColor : Colors.white,
-              ),
-              tooltip: 'Dessiner',
-            ),
-          )
-        : const SizedBox.shrink();
-
     final colorButton = _document != null
         ? RotatedBox(
             quarterTurns: isVertical ? _rotation : 0,
@@ -863,8 +834,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
               nextButton,
               if (_document != null) ...[
                 separator,
-                penButton,
-                const SizedBox(height: 4),
                 colorButton,
                 const SizedBox(height: 4),
                 eraserButton,
@@ -896,7 +865,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
               nextButton,
               if (_document != null) ...[
                 separator,
-                penButton,
                 colorButton,
                 eraserButton,
                 clearButton,
