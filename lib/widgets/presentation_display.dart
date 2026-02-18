@@ -144,17 +144,20 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                 Positioned(
                   bottom: 16,
                   right: 16,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      '${_currentPage + 1} / $_totalPages',
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 16),
+                  child: RotatedBox(
+                    quarterTurns: _rotation,
+                    child: Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        '${_currentPage + 1} / $_totalPages',
+                        style:
+                            const TextStyle(color: Colors.white70, fontSize: 16),
+                      ),
                     ),
                   ),
                 ),

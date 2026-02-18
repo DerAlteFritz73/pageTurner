@@ -91,6 +91,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     Colors.green,
     Colors.orange,
     Colors.purple,
+    Colors.white,
   ];
   // Thickness range for the slider
   static const double _minThickness = 0.3;
