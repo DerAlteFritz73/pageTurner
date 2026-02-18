@@ -80,7 +80,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   bool _isDrawingMode = false;
   bool _isEraserMode = false;
   Color _currentColor = Colors.red;
-  double _currentThickness = 4.0;
+  double _currentThickness = 2.0;
   double _imageAspectRatio = 1.0;
 
   // Available colors and thickness options
@@ -92,7 +92,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     Colors.orange,
     Colors.purple,
   ];
-  static const List<double> _thicknessOptions = [2.0, 4.0, 8.0];
+  static const List<double> _thicknessOptions = [1.0, 2.0, 4.0];
 
   @override
   void initState() {
@@ -454,7 +454,30 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: _buildLayout(),
+        child: Stack(
+          children: [
+            _buildLayout(),
+            Positioned(
+              top: 4,
+              left: 4,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  _displayService.debugStatus,
+                  style: const TextStyle(
+                    color: Colors.yellow,
+                    fontSize: 10,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -690,9 +713,9 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
             child: IconButton(
               onPressed: _cycleThickness,
               icon: Icon(
-                _currentThickness <= 2.0
+                _currentThickness <= 1.0
                     ? Icons.line_weight
-                    : _currentThickness <= 4.0
+                    : _currentThickness <= 2.0
                         ? Icons.horizontal_rule
                         : Icons.maximize,
                 color: Colors.white,
