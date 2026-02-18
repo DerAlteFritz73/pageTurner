@@ -252,12 +252,52 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     );
   }
 
-  void _cycleThickness() {
-    setState(() {
-      final currentIndex = _thicknessOptions.indexOf(_currentThickness);
-      final nextIndex = (currentIndex + 1) % _thicknessOptions.length;
-      _currentThickness = _thicknessOptions[nextIndex];
-    });
+  void _showThicknessPicker() {
+    showDialog(
+      context: context,
+      builder: (context) => RotatedBox(
+        quarterTurns: _effectiveRotation,
+        child: AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text('Épaisseur', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: _thicknessOptions.map((thickness) {
+              final isSelected = _currentThickness == thickness;
+              return GestureDetector(
+                onTap: () {
+                  setState(() => _currentThickness = thickness);
+                  Navigator.of(context).pop();
+                },
+                child: Container(
+                  width: double.infinity,
+                  height: 48,
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: isSelected ? Colors.white : Colors.white24,
+                      width: 1.5,
+                    ),
+                    borderRadius: BorderRadius.circular(6),
+                    color: isSelected ? Colors.white12 : Colors.transparent,
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 160,
+                      height: thickness,
+                      decoration: BoxDecoration(
+                        color: isSelected ? _currentColor : Colors.white54,
+                        borderRadius: BorderRadius.circular(thickness / 2),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
   }
 
   void _clearCurrentPage() {
@@ -711,15 +751,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         ? RotatedBox(
             quarterTurns: isVertical ? _rotation : 0,
             child: IconButton(
-              onPressed: _cycleThickness,
-              icon: Icon(
-                _currentThickness <= 1.0
-                    ? Icons.line_weight
-                    : _currentThickness <= 2.0
-                        ? Icons.horizontal_rule
-                        : Icons.maximize,
-                color: Colors.white,
-              ),
+              onPressed: _showThicknessPicker,
+              icon: const Icon(Icons.line_weight, color: Colors.white),
               tooltip: 'Épaisseur',
             ),
           )
