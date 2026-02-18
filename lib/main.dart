@@ -317,6 +317,15 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Cast status
+              if (_hasSecondaryDisplay)
+                ListTile(
+                  leading: const Icon(Icons.cast_connected, color: Colors.greenAccent),
+                  title: const Text('Écran externe connecté',
+                      style: TextStyle(color: Colors.greenAccent)),
+                ),
+              if (_hasSecondaryDisplay)
+                const Divider(color: Colors.white24),
               // Rotation
               ListTile(
                 leading: Icon(
@@ -739,17 +748,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
           )
         : const SizedBox.shrink();
 
-    final castIndicator = _hasSecondaryDisplay
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: const Icon(
-              Icons.cast_connected,
-              color: Colors.greenAccent,
-              size: 20,
-            ),
-          )
-        : const SizedBox.shrink();
-
     final nextButton = IconButton(
       onPressed: _currentPage < _totalPages - 1 ? _nextPage : null,
       icon: Icon(isVertical ? Icons.arrow_downward : Icons.arrow_forward),
@@ -822,7 +820,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              castIndicator,
               previousButton,
               const SizedBox(height: 8),
               openButton,
@@ -853,7 +850,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              castIndicator,
               previousButton,
               const SizedBox(width: 8),
               openButton,
