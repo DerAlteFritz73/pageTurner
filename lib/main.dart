@@ -215,48 +215,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   }
 
   void _showColorPicker() {
-    showDialog(
-      context: context,
-      builder: (context) => RotatedBox(
-        quarterTurns: _effectiveRotation,
-        child: AlertDialog(
-          backgroundColor: Colors.grey[900],
-          title: const Text('Couleur', style: TextStyle(color: Colors.white)),
-          content: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _colorOptions.map((color) {
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _currentColor = color;
-                  });
-                  Navigator.of(context).pop();
-                },
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: _currentColor == color
-                          ? Colors.white
-                          : Colors.transparent,
-                      width: 3,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showThicknessPicker() {
     double tempThickness = _currentThickness;
+    Color tempColor = _currentColor;
     showDialog(
       context: context,
       builder: (context) => RotatedBox(
@@ -264,15 +224,41 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         child: StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
             backgroundColor: Colors.grey[900],
-            title: const Text('Épaisseur', style: TextStyle(color: Colors.white)),
+            title: const Text('Couleur & épaisseur', style: TextStyle(color: Colors.white)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Live preview line
+                // Color swatches
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _colorOptions.map((color) {
+                    return GestureDetector(
+                      onTap: () {
+                        setDialogState(() => tempColor = color);
+                      },
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: tempColor == color
+                                ? Colors.white
+                                : Colors.transparent,
+                            width: 3,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 20),
+                // Thickness preview line
                 Container(
                   width: double.infinity,
                   height: 48,
-                  margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.white24, width: 1),
                     borderRadius: BorderRadius.circular(6),
@@ -282,19 +268,19 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                       width: 160,
                       height: tempThickness.clamp(0.5, 48.0),
                       decoration: BoxDecoration(
-                        color: _isDrawingMode ? _currentColor : Colors.white54,
+                        color: tempColor,
                         borderRadius: BorderRadius.circular(tempThickness / 2),
                       ),
                     ),
                   ),
                 ),
-                // Slider
+                // Thickness slider
                 SliderTheme(
                   data: SliderThemeData(
-                    activeTrackColor: _currentColor,
+                    activeTrackColor: tempColor,
                     thumbColor: Colors.white,
                     inactiveTrackColor: Colors.white24,
-                    overlayColor: _currentColor.withValues(alpha: 0.2),
+                    overlayColor: tempColor.withValues(alpha: 0.2),
                   ),
                   child: Slider(
                     value: tempThickness,
@@ -305,7 +291,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                     },
                   ),
                 ),
-                // Value label
                 Text(
                   tempThickness.toStringAsFixed(1),
                   style: const TextStyle(color: Colors.white70, fontSize: 14),
@@ -319,7 +304,10 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
               ),
               TextButton(
                 onPressed: () {
-                  setState(() => _currentThickness = tempThickness);
+                  setState(() {
+                    _currentColor = tempColor;
+                    _currentThickness = tempThickness;
+                  });
                   Navigator.of(context).pop();
                 },
                 child: const Text('OK', style: TextStyle(color: Colors.white)),
@@ -812,35 +800,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
           )
         : const SizedBox.shrink();
 
-    final thicknessButton = _document != null
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: GestureDetector(
-              onTap: _showThicknessPicker,
-              child: Tooltip(
-                message: 'Épaisseur',
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: Center(
-                      child: Container(
-                        width: 20,
-                        height: _currentThickness.clamp(1.0, 20.0),
-                        decoration: BoxDecoration(
-                          color: _isDrawingMode ? _currentColor : Colors.white,
-                          borderRadius: BorderRadius.circular(_currentThickness / 2),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          )
-        : const SizedBox.shrink();
-
     final eraserButton = _document != null
         ? RotatedBox(
             quarterTurns: isVertical ? _rotation : 0,
@@ -908,8 +867,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                 const SizedBox(height: 4),
                 colorButton,
                 const SizedBox(height: 4),
-                thicknessButton,
-                const SizedBox(height: 4),
                 eraserButton,
                 const SizedBox(height: 4),
                 clearButton,
@@ -941,7 +898,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                 separator,
                 penButton,
                 colorButton,
-                thicknessButton,
                 eraserButton,
                 clearButton,
               ],
