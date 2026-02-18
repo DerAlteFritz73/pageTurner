@@ -81,7 +81,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   bool _isDrawingMode = false;
   bool _isEraserMode = false;
   Color _currentColor = Colors.red;
-  double _currentThickness = 2.0;
+  double _currentThickness = 1.0;
   double _imageAspectRatio = 1.0;
 
   // Available colors and thickness options
@@ -93,7 +93,9 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     Colors.orange,
     Colors.purple,
   ];
-  static const List<double> _thicknessOptions = [1.0, 2.0, 4.0];
+  // Thickness range for the slider
+  static const double _minThickness = 0.3;
+  static const double _maxThickness = 8.0;
 
   @override
   void initState() {
@@ -254,47 +256,75 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   }
 
   void _showThicknessPicker() {
+    double tempThickness = _currentThickness;
     showDialog(
       context: context,
       builder: (context) => RotatedBox(
         quarterTurns: _effectiveRotation,
-        child: AlertDialog(
-          backgroundColor: Colors.grey[900],
-          title: const Text('Épaisseur', style: TextStyle(color: Colors.white)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: _thicknessOptions.map((thickness) {
-              final isSelected = _currentThickness == thickness;
-              return GestureDetector(
-                onTap: () {
-                  setState(() => _currentThickness = thickness);
-                  Navigator.of(context).pop();
-                },
-                child: Container(
+        child: StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            backgroundColor: Colors.grey[900],
+            title: const Text('Épaisseur', style: TextStyle(color: Colors.white)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Live preview line
+                Container(
                   width: double.infinity,
                   height: 48,
-                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    border: Border.all(
-                      color: isSelected ? Colors.white : Colors.white24,
-                      width: 1.5,
-                    ),
+                    border: Border.all(color: Colors.white24, width: 1),
                     borderRadius: BorderRadius.circular(6),
-                    color: isSelected ? Colors.white12 : Colors.transparent,
                   ),
                   child: Center(
                     child: Container(
                       width: 160,
-                      height: thickness,
+                      height: tempThickness.clamp(0.5, 48.0),
                       decoration: BoxDecoration(
-                        color: isSelected ? _currentColor : Colors.white54,
-                        borderRadius: BorderRadius.circular(thickness / 2),
+                        color: _isDrawingMode ? _currentColor : Colors.white54,
+                        borderRadius: BorderRadius.circular(tempThickness / 2),
                       ),
                     ),
                   ),
                 ),
-              );
-            }).toList(),
+                // Slider
+                SliderTheme(
+                  data: SliderThemeData(
+                    activeTrackColor: _currentColor,
+                    thumbColor: Colors.white,
+                    inactiveTrackColor: Colors.white24,
+                    overlayColor: _currentColor.withValues(alpha: 0.2),
+                  ),
+                  child: Slider(
+                    value: tempThickness,
+                    min: _minThickness,
+                    max: _maxThickness,
+                    onChanged: (value) {
+                      setDialogState(() => tempThickness = value);
+                    },
+                  ),
+                ),
+                // Value label
+                Text(
+                  tempThickness.toStringAsFixed(1),
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() => _currentThickness = tempThickness);
+                  Navigator.of(context).pop();
+                },
+                child: const Text('OK', style: TextStyle(color: Colors.white)),
+              ),
+            ],
           ),
         ),
       ),
@@ -447,8 +477,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     try {
       final page = await _document!.getPage(pageIndex + 1);
       final pageImage = await page.render(
-        width: page.width * 2,
-        height: page.height * 2,
+        width: page.width * 3,
+        height: page.height * 3,
         format: PdfPageImageFormat.png,
         backgroundColor: '#FFFFFF',
       );
@@ -607,7 +637,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       child: InteractiveViewer(
         transformationController: _transformationController,
         minScale: 0.5,
-        maxScale: 4.0,
+        maxScale: 10.0,
         panEnabled: !_isStylusDrawing && _isZoomed,
         scaleEnabled: !_isStylusDrawing,
         child: Center(
@@ -862,28 +892,31 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         color: Colors.black54,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            castIndicator,
-            previousButton,
-            const SizedBox(width: 8),
-            openButton,
-            const SizedBox(width: 8),
-            rotateButton,
-            const SizedBox(width: 8),
-            pageCounter,
-            const SizedBox(width: 8),
-            nextButton,
-            if (_document != null) ...[
-              separator,
-              penButton,
-              colorButton,
-              thicknessButton,
-              eraserButton,
-              clearButton,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              castIndicator,
+              previousButton,
+              const SizedBox(width: 8),
+              openButton,
+              const SizedBox(width: 8),
+              rotateButton,
+              const SizedBox(width: 8),
+              pageCounter,
+              const SizedBox(width: 8),
+              nextButton,
+              if (_document != null) ...[
+                separator,
+                penButton,
+                colorButton,
+                thicknessButton,
+                eraserButton,
+                clearButton,
+              ],
             ],
-          ],
+          ),
         ),
       );
     }
