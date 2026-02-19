@@ -1050,35 +1050,13 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     final content = Expanded(child: _buildContent());
     final controls = _buildControls();
 
-    // When secondary display is connected, phone always uses portrait layout
-    final effectiveRotation = _effectiveRotation;
-
-    // For 90° and 270° rotations, use horizontal layout with controls on the side
-    if (effectiveRotation == 1) {
-      // 90° clockwise - controls on left (visual bottom when reading rotated content)
-      return Row(
-        children: [
-          controls,
-          content,
-        ],
-      );
-    } else if (effectiveRotation == 3) {
-      // 270° clockwise - controls on right (visual bottom when reading rotated content)
-      return Row(
-        children: [
-          content,
-          controls,
-        ],
-      );
-    } else {
-      // 0° or 180° - controls at physical bottom
-      return Column(
-        children: [
-          content,
-          controls,
-        ],
-      );
-    }
+    // Controls always at the physical bottom to maximise PDF display width
+    return Column(
+      children: [
+        content,
+        controls,
+      ],
+    );
   }
 
   Widget _buildContent() {
@@ -1363,90 +1341,45 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         : const SizedBox.shrink();
 
     final separator = _document != null
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: Container(
-              width: isVertical ? 24 : 1,
-              height: isVertical ? 1 : 24,
-              color: Colors.white38,
-              margin: EdgeInsets.symmetric(
-                horizontal: isVertical ? 0 : 8,
-                vertical: isVertical ? 8 : 0,
-              ),
-            ),
+        ? Container(
+            width: 1,
+            height: 24,
+            color: Colors.white38,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
           )
         : const SizedBox.shrink();
 
-    if (isVertical) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        color: Colors.black54,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              previousButton,
-              const SizedBox(height: 8),
-              openButton,
-              const SizedBox(height: 8),
-              paramsButton,
-              const SizedBox(height: 8),
-              pageCounter,
-              const SizedBox(height: 8),
-              nextButton,
-              if (_document != null) ...[
-                separator,
-                colorButton,
-                const SizedBox(height: 4),
-                eraserButton,
-                const SizedBox(height: 4),
-                textButton,
-                const SizedBox(height: 4),
-                undoButton,
-                const SizedBox(height: 4),
-                redoButton,
-                const SizedBox(height: 4),
-                clearButton,
-                const SizedBox(height: 4),
-                bookmarkButton,
-              ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      color: Colors.black54,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            previousButton,
+            const SizedBox(width: 8),
+            openButton,
+            const SizedBox(width: 8),
+            paramsButton,
+            const SizedBox(width: 8),
+            pageCounter,
+            const SizedBox(width: 8),
+            nextButton,
+            if (_document != null) ...[
+              separator,
+              colorButton,
+              eraserButton,
+              textButton,
+              undoButton,
+              redoButton,
+              clearButton,
+              bookmarkButton,
             ],
-          ),
+          ],
         ),
-      );
-    } else {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        color: Colors.black54,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              previousButton,
-              const SizedBox(width: 8),
-              openButton,
-              const SizedBox(width: 8),
-              paramsButton,
-              const SizedBox(width: 8),
-              pageCounter,
-              const SizedBox(width: 8),
-              nextButton,
-              if (_document != null) ...[
-                separator,
-                colorButton,
-                eraserButton,
-                textButton,
-                undoButton,
-                redoButton,
-                clearButton,
-                bookmarkButton,
-              ],
-            ],
-          ),
-        ),
-      );
-    }
+      ),
+    );
   }
 }
 
