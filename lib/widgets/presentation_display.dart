@@ -25,6 +25,8 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
   int _totalPages = 0;
   int _rotation = 0;
   double _imageAspectRatio = 1.0;
+  bool _halfPageMode = false;
+  bool _showBottomHalf = false;
 
   // Live stroke preview
   List<Offset> _livePoints = [];
@@ -57,6 +59,8 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
           _totalPages = data['totalPages'] as int;
           _rotation = data['rotation'] as int;
           _imageAspectRatio = (data['imageAspectRatio'] as num?)?.toDouble() ?? 1.0;
+          _halfPageMode = data['halfPageMode'] as bool? ?? false;
+          _showBottomHalf = data['showBottomHalf'] as bool? ?? false;
           if (data['pageImageBase64'] != null) {
             _pageImageBytes =
                 base64Decode(data['pageImageBase64'] as String);
@@ -121,34 +125,50 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                       alignment: Alignment.topCenter,
                       child: RotatedBox(
                         quarterTurns: _rotation,
-                        child: Stack(
-                          children: [
-                            Image.memory(
-                              _pageImageBytes!,
-                              fit: BoxFit.contain,
-                            ),
-                            Positioned.fill(
-                              child: LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final size = Size(
-                                    constraints.maxWidth,
-                                    constraints.maxHeight,
-                                  );
-                                  return CustomPaint(
-                                    size: size,
-                                    painter: DrawingCanvasPainter(
-                                      strokes: _strokes,
-                                      currentPoints: _livePoints,
-                                      currentColor: _liveColor,
-                                      currentThickness: _liveThickness,
-                                      imageAspectRatio: _imageAspectRatio,
-                                    ),
-                                  );
-                                },
+                        child: Builder(builder: (context) {
+                          Widget pageContent = Stack(
+                            children: [
+                              Image.memory(
+                                _pageImageBytes!,
+                                fit: BoxFit.contain,
                               ),
-                            ),
-                          ],
-                        ),
+                              Positioned.fill(
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final size = Size(
+                                      constraints.maxWidth,
+                                      constraints.maxHeight,
+                                    );
+                                    return CustomPaint(
+                                      size: size,
+                                      painter: DrawingCanvasPainter(
+                                        strokes: _strokes,
+                                        currentPoints: _livePoints,
+                                        currentColor: _liveColor,
+                                        currentThickness: _liveThickness,
+                                        imageAspectRatio: _imageAspectRatio,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          );
+
+                          if (_halfPageMode) {
+                            pageContent = ClipRect(
+                              child: Align(
+                                alignment: _showBottomHalf
+                                    ? Alignment.bottomCenter
+                                    : Alignment.topCenter,
+                                heightFactor: 0.5,
+                                child: pageContent,
+                              ),
+                            );
+                          }
+
+                          return pageContent;
+                        }),
                       ),
                     ),
                   ),

@@ -168,6 +168,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       pageImageBytes: _pageImage!.bytes,
       strokes: _currentPageStrokes,
       imageAspectRatio: _imageAspectRatio,
+      halfPageMode: _halfPageMode,
+      showBottomHalf: _showBottomHalf,
     );
   }
 
@@ -984,6 +986,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     if (_halfPageMode) {
       if (_showBottomHalf) {
         setState(() => _showBottomHalf = false);
+        _syncFullStateToPresentation();
       } else if (_currentPage > 0) {
         _showBottomHalf = true;
         _renderPage(_currentPage - 1);
@@ -999,6 +1002,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     if (_halfPageMode) {
       if (!_showBottomHalf) {
         setState(() => _showBottomHalf = true);
+        _syncFullStateToPresentation();
       } else if (_currentPage < _totalPages - 1) {
         _showBottomHalf = false;
         _renderPage(_currentPage + 1);
