@@ -123,6 +123,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   @override
   void initState() {
     super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addObserver(this);
     _transformationController.addListener(_onTransformChanged);
     _displayService.init(
