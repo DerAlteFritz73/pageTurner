@@ -92,7 +92,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
 
   // Half-page mode
   bool _halfPageMode = false;
-  bool _showBottomHalf = false; // false=top half, true=bottom half
 
   // Auto-crop
   bool _autoCrop = false;
@@ -169,7 +168,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       strokes: _currentPageStrokes,
       imageAspectRatio: _imageAspectRatio,
       halfPageMode: _halfPageMode,
-      showBottomHalf: _showBottomHalf,
     );
   }
 
@@ -470,7 +468,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
 
   void _goToPage(int pageIndex) {
     if (pageIndex != _currentPage && pageIndex >= 0 && pageIndex < _totalPages) {
-      _showBottomHalf = false;
       _renderPage(pageIndex);
     }
   }
@@ -711,10 +708,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                     style: TextStyle(color: Colors.white)),
                 value: _halfPageMode,
                 onChanged: (value) {
-                  setState(() {
-                    _halfPageMode = value;
-                    _showBottomHalf = false;
-                  });
+                  setState(() => _halfPageMode = value);
                   Navigator.of(context).pop();
                 },
                 activeTrackColor: Colors.lightBlueAccent,
@@ -983,35 +977,11 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   }
 
   void _previousPage() {
-    if (_halfPageMode) {
-      if (_showBottomHalf) {
-        setState(() => _showBottomHalf = false);
-        _syncFullStateToPresentation();
-      } else if (_currentPage > 0) {
-        _showBottomHalf = true;
-        _renderPage(_currentPage - 1);
-      }
-    } else {
-      if (_currentPage > 0) {
-        _renderPage(_currentPage - 1);
-      }
-    }
+    if (_currentPage > 0) _renderPage(_currentPage - 1);
   }
 
   void _nextPage() {
-    if (_halfPageMode) {
-      if (!_showBottomHalf) {
-        setState(() => _showBottomHalf = true);
-        _syncFullStateToPresentation();
-      } else if (_currentPage < _totalPages - 1) {
-        _showBottomHalf = false;
-        _renderPage(_currentPage + 1);
-      }
-    } else {
-      if (_currentPage < _totalPages - 1) {
-        _renderPage(_currentPage + 1);
-      }
-    }
+    if (_currentPage < _totalPages - 1) _renderPage(_currentPage + 1);
   }
 
   void _rotateRight() {
@@ -1099,6 +1069,89 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     // Fingers always interact; stylus drawing disables pan/scale temporarily.
     final canSwipe = !_isStylusDrawing && !_isZoomed && _document != null;
 
+    // Half-page mode: show top and bottom halves simultaneously in a 2-panel split.
+    if (_halfPageMode) {
+      Widget buildPanel(bool isTop) => Expanded(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final panelH = constraints.maxHeight;
+            final panelW = constraints.maxWidth;
+            return ClipRect(
+              child: Align(
+                alignment: isTop ? Alignment.topCenter : Alignment.bottomCenter,
+                child: SizedBox(
+                  width: panelW,
+                  height: panelH * 2,
+                  child: Stack(
+                    children: [
+                      Image.memory(_pageImage!.bytes, fit: BoxFit.contain),
+                      Positioned.fill(
+                        child: DrawingCanvas(
+                          strokes: _currentPageStrokes,
+                          textAnnotations: _currentPageTextAnnotations,
+                          isEraserMode: _isEraserMode,
+                          isTextMode: _isTextMode,
+                          currentColor: _currentColor,
+                          currentThickness: _currentThickness,
+                          currentPageIndex: _currentPage,
+                          imageAspectRatio: _imageAspectRatio,
+                          onStrokeComplete: _onStrokeComplete,
+                          onStrokeErased: _onStrokeErased,
+                          onTextAnnotationErased: _onTextAnnotationErased,
+                          onTextTap: _showTextInputDialog,
+                          onStylusStateChanged: (isActive) {
+                            if (_isStylusDrawing != isActive) {
+                              setState(() => _isStylusDrawing = isActive);
+                            }
+                          },
+                          onLivePointsChanged: _hasSecondaryDisplay
+                              ? (points) {
+                                  if (points.isEmpty) {
+                                    _displayService.clearLiveStroke();
+                                  } else {
+                                    _displayService.sendLiveStroke(
+                                      points: points,
+                                      color: _currentColor,
+                                      thickness: _currentThickness,
+                                    );
+                                  }
+                                }
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+
+      return GestureDetector(
+        onHorizontalDragEnd: canSwipe
+            ? (details) {
+                final velocity = details.primaryVelocity ?? 0;
+                if (velocity < -300) {
+                  _nextPage();
+                } else if (velocity > 300) {
+                  _previousPage();
+                }
+              }
+            : null,
+        child: RotatedBox(
+          quarterTurns: _effectiveRotation,
+          child: Column(
+            children: [
+              buildPanel(true),
+              Container(height: 1, color: Colors.white24),
+              buildPanel(false),
+            ],
+          ),
+        ),
+      );
+    }
+
     return GestureDetector(
       onHorizontalDragEnd: canSwipe
           ? (details) {
@@ -1174,18 +1227,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                     ),
                     widthFactor: cr.right - cr.left,
                     heightFactor: cr.bottom - cr.top,
-                    child: pageContent,
-                  ),
-                );
-              }
-
-              if (_halfPageMode) {
-                pageContent = ClipRect(
-                  child: Align(
-                    alignment: _showBottomHalf
-                        ? Alignment.bottomCenter
-                        : Alignment.topCenter,
-                    heightFactor: 0.5,
                     child: pageContent,
                   ),
                 );
