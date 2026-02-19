@@ -83,14 +83,17 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
       kind == PointerDeviceKind.stylus ||
       kind == PointerDeviceKind.invertedStylus;
 
+  bool _isButtonErasing(PointerEvent event) =>
+      event.kind == PointerDeviceKind.invertedStylus ||
+      (event.buttons & kPrimaryStylusButton) != 0;
+
   void _onPointerDown(PointerDownEvent event, Size size) {
     if (!_isStylusKind(event.kind)) return;
 
     _activePointerId = event.pointer;
     widget.onStylusStateChanged?.call(true);
 
-    final isErasing =
-        widget.isEraserMode || event.kind == PointerDeviceKind.invertedStylus;
+    final isErasing = widget.isEraserMode || _isButtonErasing(event);
 
     if (isErasing) {
       _tryEraseStroke(event.localPosition, size);
@@ -109,10 +112,17 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
   void _onPointerMove(PointerMoveEvent event, Size size) {
     if (event.pointer != _activePointerId) return;
 
-    final isErasing =
-        widget.isEraserMode || event.kind == PointerDeviceKind.invertedStylus;
+    final isErasing = widget.isEraserMode || _isButtonErasing(event);
 
     if (isErasing) {
+      // If we were mid-stroke, discard it before erasing
+      if (_isDrawing) {
+        setState(() {
+          _isDrawing = false;
+          _currentPoints = [];
+        });
+        widget.onLivePointsChanged?.call(const []);
+      }
       _tryEraseStroke(event.localPosition, size);
     } else if (_isDrawing) {
       setState(() {
