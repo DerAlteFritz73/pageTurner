@@ -7,26 +7,34 @@ import '../models/annotation.dart';
 
 class DrawingCanvas extends StatefulWidget {
   final List<Stroke> strokes;
+  final List<TextAnnotation> textAnnotations;
   final bool isEraserMode;
+  final bool isTextMode;
   final Color currentColor;
   final double currentThickness;
   final int currentPageIndex;
   final double imageAspectRatio;
   final void Function(Stroke stroke) onStrokeComplete;
   final void Function(String strokeId) onStrokeErased;
+  final void Function(String textAnnotationId)? onTextAnnotationErased;
+  final void Function(Offset normalizedPosition)? onTextTap;
   final void Function(List<Offset> points)? onLivePointsChanged;
   final void Function(bool isActive)? onStylusStateChanged;
 
   const DrawingCanvas({
     super.key,
     required this.strokes,
+    this.textAnnotations = const [],
     required this.isEraserMode,
+    this.isTextMode = false,
     required this.currentColor,
     required this.currentThickness,
     required this.currentPageIndex,
     required this.imageAspectRatio,
     required this.onStrokeComplete,
     required this.onStrokeErased,
+    this.onTextAnnotationErased,
+    this.onTextTap,
     this.onLivePointsChanged,
     this.onStylusStateChanged,
   });
@@ -86,6 +94,9 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
 
     if (isErasing) {
       _tryEraseStroke(event.localPosition, size);
+    } else if (widget.isTextMode) {
+      final normalized = _transformPoint(event.localPosition, size);
+      widget.onTextTap?.call(normalized);
     } else {
       setState(() {
         _isDrawing = true;
@@ -155,6 +166,20 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
         }
       }
     }
+    // Also try erasing text annotations
+    for (final annotation in widget.textAnnotations) {
+      final screenPos = _untransformPoint(annotation.position, size);
+      // Use a larger hit area for text
+      final textHitRect = Rect.fromCenter(
+        center: screenPos,
+        width: 80,
+        height: annotation.fontSize * 2,
+      );
+      if (textHitRect.contains(screenPoint)) {
+        widget.onTextAnnotationErased?.call(annotation.id);
+        return;
+      }
+    }
   }
 
   @override
@@ -176,6 +201,7 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
               size: size,
               painter: DrawingCanvasPainter(
                 strokes: widget.strokes,
+                textAnnotations: widget.textAnnotations,
                 currentPoints: _currentPoints,
                 currentColor: widget.currentColor,
                 currentThickness: widget.currentThickness,
@@ -191,6 +217,7 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
 
 class DrawingCanvasPainter extends CustomPainter {
   final List<Stroke> strokes;
+  final List<TextAnnotation> textAnnotations;
   final List<Offset> currentPoints;
   final Color currentColor;
   final double currentThickness;
@@ -198,6 +225,7 @@ class DrawingCanvasPainter extends CustomPainter {
 
   DrawingCanvasPainter({
     required this.strokes,
+    this.textAnnotations = const [],
     required this.currentPoints,
     required this.currentColor,
     required this.currentThickness,
@@ -268,11 +296,30 @@ class DrawingCanvasPainter extends CustomPainter {
       }
       canvas.drawPath(path, paint);
     }
+
+    // Render text annotations
+    for (final annotation in textAnnotations) {
+      final screenPos = _untransformPoint(annotation.position, size);
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: annotation.text,
+          style: TextStyle(
+            color: annotation.color,
+            fontSize: annotation.fontSize,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(canvas, screenPos);
+    }
   }
 
   @override
   bool shouldRepaint(DrawingCanvasPainter oldDelegate) {
     return strokes != oldDelegate.strokes ||
+        textAnnotations != oldDelegate.textAnnotations ||
         currentPoints != oldDelegate.currentPoints ||
         currentColor != oldDelegate.currentColor ||
         currentThickness != oldDelegate.currentThickness ||

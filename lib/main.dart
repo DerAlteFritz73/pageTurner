@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
@@ -50,6 +52,14 @@ void secondaryDisplayMain() {
   ));
 }
 
+enum _ActionType { addStroke, removeStroke }
+
+class _AnnotationAction {
+  final _ActionType type;
+  final Stroke stroke;
+  const _AnnotationAction(this.type, this.stroke);
+}
+
 class PdfViewerPage extends StatefulWidget {
   const PdfViewerPage({super.key});
 
@@ -79,6 +89,19 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   String? _currentPdfPath;
   AnnotationData? _annotationData;
   bool _isEraserMode = false;
+
+  // Half-page mode
+  bool _halfPageMode = false;
+  bool _showBottomHalf = false; // false=top half, true=bottom half
+
+  // Auto-crop
+  bool _autoCrop = false;
+  Rect? _cropRect; // normalized crop rect (0.0-1.0) for current page
+
+  // Undo/redo stacks
+  final List<_AnnotationAction> _undoStack = [];
+  final List<_AnnotationAction> _redoStack = [];
+  bool _isTextMode = false;
   Color _currentColor = Colors.red;
   double _currentThickness = 1.0;
   double _imageAspectRatio = 1.0;
@@ -182,6 +205,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     if (_annotationData != null) {
       setState(() {
         _annotationData!.addStroke(stroke);
+        _undoStack.add(_AnnotationAction(_ActionType.addStroke, stroke));
+        _redoStack.clear();
       });
       _displayService.sendStrokeAdded(stroke);
     }
@@ -189,17 +214,334 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
 
   void _onStrokeErased(String strokeId) {
     if (_annotationData != null) {
+      // Find the stroke before removing so we can undo later
+      Stroke? erasedStroke;
+      for (final strokes in _annotationData!.strokesByPage.values) {
+        for (final s in strokes) {
+          if (s.id == strokeId) {
+            erasedStroke = s;
+            break;
+          }
+        }
+        if (erasedStroke != null) break;
+      }
       setState(() {
         _annotationData!.removeStroke(strokeId);
+        if (erasedStroke != null) {
+          _undoStack.add(_AnnotationAction(_ActionType.removeStroke, erasedStroke));
+          _redoStack.clear();
+        }
       });
       _displayService.sendStrokeRemoved(strokeId);
     }
   }
 
+  void _undo() {
+    if (_undoStack.isEmpty || _annotationData == null) return;
+    final action = _undoStack.removeLast();
+    setState(() {
+      switch (action.type) {
+        case _ActionType.addStroke:
+          _annotationData!.removeStroke(action.stroke.id);
+          _displayService.sendStrokeRemoved(action.stroke.id);
+        case _ActionType.removeStroke:
+          _annotationData!.addStroke(action.stroke);
+          _displayService.sendStrokeAdded(action.stroke);
+      }
+      _redoStack.add(action);
+    });
+  }
+
+  void _redo() {
+    if (_redoStack.isEmpty || _annotationData == null) return;
+    final action = _redoStack.removeLast();
+    setState(() {
+      switch (action.type) {
+        case _ActionType.addStroke:
+          _annotationData!.addStroke(action.stroke);
+          _displayService.sendStrokeAdded(action.stroke);
+        case _ActionType.removeStroke:
+          _annotationData!.removeStroke(action.stroke.id);
+          _displayService.sendStrokeRemoved(action.stroke.id);
+      }
+      _undoStack.add(action);
+    });
+  }
+
   void _toggleEraserMode() {
     setState(() {
       _isEraserMode = !_isEraserMode;
+      if (_isEraserMode) _isTextMode = false;
     });
+  }
+
+  void _toggleTextMode() {
+    setState(() {
+      _isTextMode = !_isTextMode;
+      if (_isTextMode) _isEraserMode = false;
+    });
+  }
+
+  // Bookmark methods
+  List<Bookmark> get _bookmarks => _annotationData?.bookmarks ?? [];
+
+  void _showBookmarkMenu() {
+    final pageBookmarks = _bookmarks
+        .where((b) => b.pageIndex == _currentPage)
+        .toList();
+    final hasBookmarkOnPage = pageBookmarks.isNotEmpty;
+
+    showDialog(
+      context: context,
+      builder: (context) => RotatedBox(
+        quarterTurns: _effectiveRotation,
+        child: AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text('Signets', style: TextStyle(color: Colors.white)),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Add/remove bookmark for current page
+                ListTile(
+                  leading: Icon(
+                    hasBookmarkOnPage ? Icons.bookmark_remove : Icons.bookmark_add,
+                    color: hasBookmarkOnPage ? Colors.orange : Colors.white,
+                  ),
+                  title: Text(
+                    hasBookmarkOnPage
+                        ? 'Retirer le signet (p. ${_currentPage + 1})'
+                        : 'Ajouter un signet (p. ${_currentPage + 1})',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    if (hasBookmarkOnPage) {
+                      _removeBookmarksOnPage(_currentPage);
+                    } else {
+                      _showAddBookmarkDialog();
+                    }
+                  },
+                ),
+                if (_bookmarks.isNotEmpty) ...[
+                  const Divider(color: Colors.white24),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Text('Aller à...', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  ),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _bookmarks.length,
+                      itemBuilder: (context, index) {
+                        final bookmark = _bookmarks[index];
+                        final isCurrent = bookmark.pageIndex == _currentPage;
+                        return ListTile(
+                          dense: true,
+                          leading: Icon(Icons.bookmark, color: bookmark.color),
+                          title: Text(
+                            bookmark.label,
+                            style: TextStyle(
+                              color: isCurrent ? Colors.white : Colors.white70,
+                              fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'Page ${bookmark.pageIndex + 1}',
+                            style: const TextStyle(color: Colors.white38, fontSize: 11),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.white38, size: 18),
+                            onPressed: () {
+                              setState(() => _annotationData?.removeBookmark(bookmark.id));
+                              Navigator.of(context).pop();
+                              _showBookmarkMenu(); // reopen to show updated list
+                            },
+                          ),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            _goToPage(bookmark.pageIndex);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAddBookmarkDialog() {
+    final presetLabels = ['D.S.', 'D.C.', 'Coda', 'Fine', 'Segno', '\u{1D10B}', '\u{1D10C}'];
+    String customLabel = '';
+
+    showDialog(
+      context: context,
+      builder: (context) => RotatedBox(
+        quarterTurns: _effectiveRotation,
+        child: StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            backgroundColor: Colors.grey[900],
+            title: Text('Signet — page ${_currentPage + 1}',
+                style: const TextStyle(color: Colors.white)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: presetLabels.map((label) {
+                    return ActionChip(
+                      label: Text(label),
+                      onPressed: () {
+                        _addBookmark(label);
+                        Navigator.of(context).pop();
+                      },
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    hintText: 'Texte libre...',
+                    hintStyle: TextStyle(color: Colors.white38),
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white24),
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white),
+                    ),
+                  ),
+                  onChanged: (v) => customLabel = v,
+                  onSubmitted: (v) {
+                    if (v.isNotEmpty) {
+                      _addBookmark(v);
+                      Navigator.of(context).pop();
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+              ),
+              TextButton(
+                onPressed: () {
+                  if (customLabel.isNotEmpty) {
+                    _addBookmark(customLabel);
+                  } else {
+                    _addBookmark('Page ${_currentPage + 1}');
+                  }
+                  Navigator.of(context).pop();
+                },
+                child: const Text('OK', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _addBookmark(String label) {
+    if (_annotationData == null) return;
+    final bookmark = Bookmark(pageIndex: _currentPage, label: label);
+    setState(() => _annotationData!.addBookmark(bookmark));
+  }
+
+  void _removeBookmarksOnPage(int pageIndex) {
+    if (_annotationData == null) return;
+    setState(() {
+      _annotationData!.bookmarks.removeWhere((b) => b.pageIndex == pageIndex);
+    });
+  }
+
+  void _goToPage(int pageIndex) {
+    if (pageIndex != _currentPage && pageIndex >= 0 && pageIndex < _totalPages) {
+      _showBottomHalf = false;
+      _renderPage(pageIndex);
+    }
+  }
+
+  // Text annotation methods
+  List<TextAnnotation> get _currentPageTextAnnotations {
+    return _annotationData?.getTextAnnotationsForPage(_currentPage) ?? [];
+  }
+
+  void _onTextAnnotationErased(String id) {
+    if (_annotationData != null) {
+      setState(() => _annotationData!.removeTextAnnotation(id));
+    }
+  }
+
+  void _showTextInputDialog(Offset normalizedPosition) {
+    String text = '';
+    showDialog(
+      context: context,
+      builder: (context) => RotatedBox(
+        quarterTurns: _effectiveRotation,
+        child: AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text('Annotation texte', style: TextStyle(color: Colors.white)),
+          content: TextField(
+            autofocus: true,
+            style: const TextStyle(color: Colors.white),
+            decoration: const InputDecoration(
+              hintText: 'Texte...',
+              hintStyle: TextStyle(color: Colors.white38),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.white24),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Colors.white),
+              ),
+            ),
+            onChanged: (v) => text = v,
+            onSubmitted: (v) {
+              if (v.isNotEmpty) {
+                _addTextAnnotation(v, normalizedPosition);
+                Navigator.of(context).pop();
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+            ),
+            TextButton(
+              onPressed: () {
+                if (text.isNotEmpty) {
+                  _addTextAnnotation(text, normalizedPosition);
+                }
+                Navigator.of(context).pop();
+              },
+              child: const Text('OK', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _addTextAnnotation(String text, Offset position) {
+    if (_annotationData == null) return;
+    final annotation = TextAnnotation(
+      pageIndex: _currentPage,
+      text: text,
+      position: position,
+      color: _currentColor,
+    );
+    setState(() => _annotationData!.addTextAnnotation(annotation));
   }
 
   void _showColorPicker() {
@@ -345,6 +687,36 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                 },
               ),
               const Divider(color: Colors.white24),
+              // Auto-crop
+              SwitchListTile(
+                secondary: const Icon(Icons.crop, color: Colors.white),
+                title: const Text('Recadrage auto',
+                    style: TextStyle(color: Colors.white)),
+                value: _autoCrop,
+                onChanged: (value) {
+                  setState(() => _autoCrop = value);
+                  Navigator.of(context).pop();
+                  // Re-render to apply/remove crop
+                  if (_document != null) _renderPage(_currentPage);
+                },
+                activeTrackColor: Colors.lightBlueAccent,
+              ),
+              // Half-page mode
+              SwitchListTile(
+                secondary: const Icon(Icons.vertical_split, color: Colors.white),
+                title: const Text('Demi-page',
+                    style: TextStyle(color: Colors.white)),
+                value: _halfPageMode,
+                onChanged: (value) {
+                  setState(() {
+                    _halfPageMode = value;
+                    _showBottomHalf = false;
+                  });
+                  Navigator.of(context).pop();
+                },
+                activeTrackColor: Colors.lightBlueAccent,
+              ),
+              const Divider(color: Colors.white24),
               // Debug info
               ExpansionTile(
                 leading: const Icon(Icons.bug_report, color: Colors.white54),
@@ -478,6 +850,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       _isLoading = true;
       _errorMessage = null;
       _isEraserMode = false;
+      _undoStack.clear();
+      _redoStack.clear();
     });
 
     try {
@@ -526,10 +900,17 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       final aspectRatio = page.width / page.height;
       await page.close();
 
+      // Compute crop rect if auto-crop is enabled
+      Rect? cropRect;
+      if (_autoCrop && pageImage != null) {
+        cropRect = await _computeCropRect(pageImage.bytes);
+      }
+
       setState(() {
         _pageImage = pageImage;
         _currentPage = pageIndex;
         _imageAspectRatio = aspectRatio;
+        _cropRect = cropRect;
         _isLoading = false;
       });
 
@@ -542,15 +923,89 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     }
   }
 
+  Future<Rect?> _computeCropRect(Uint8List pngBytes) async {
+    final codec = await ui.instantiateImageCodec(pngBytes);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (byteData == null) return null;
+
+    final pixels = byteData.buffer.asUint8List();
+    final w = image.width;
+    final h = image.height;
+    const threshold = 240; // near-white threshold
+
+    bool isWhitePixel(int x, int y) {
+      final i = (y * w + x) * 4;
+      return pixels[i] >= threshold &&
+          pixels[i + 1] >= threshold &&
+          pixels[i + 2] >= threshold;
+    }
+
+    bool isRowWhite(int y) {
+      for (int x = 0; x < w; x += 4) { // sample every 4th pixel for speed
+        if (!isWhitePixel(x, y)) return false;
+      }
+      return true;
+    }
+
+    bool isColWhite(int x) {
+      for (int y = 0; y < h; y += 4) {
+        if (!isWhitePixel(x, y)) return false;
+      }
+      return true;
+    }
+
+    int top = 0, bottom = h - 1, left = 0, right = w - 1;
+    while (top < h && isRowWhite(top)) { top++; }
+    while (bottom > top && isRowWhite(bottom)) { bottom--; }
+    while (left < w && isColWhite(left)) { left++; }
+    while (right > left && isColWhite(right)) { right--; }
+
+    // Add small padding (2% of dimensions)
+    final padX = (w * 0.02).round();
+    final padY = (h * 0.02).round();
+    top = (top - padY).clamp(0, h - 1);
+    bottom = (bottom + padY).clamp(0, h - 1);
+    left = (left - padX).clamp(0, w - 1);
+    right = (right + padX).clamp(0, w - 1);
+
+    // Return normalized rect
+    return Rect.fromLTRB(
+      left / w,
+      top / h,
+      right / w,
+      bottom / h,
+    );
+  }
+
   void _previousPage() {
-    if (_currentPage > 0) {
-      _renderPage(_currentPage - 1);
+    if (_halfPageMode) {
+      if (_showBottomHalf) {
+        setState(() => _showBottomHalf = false);
+      } else if (_currentPage > 0) {
+        _showBottomHalf = true;
+        _renderPage(_currentPage - 1);
+      }
+    } else {
+      if (_currentPage > 0) {
+        _renderPage(_currentPage - 1);
+      }
     }
   }
 
   void _nextPage() {
-    if (_currentPage < _totalPages - 1) {
-      _renderPage(_currentPage + 1);
+    if (_halfPageMode) {
+      if (!_showBottomHalf) {
+        setState(() => _showBottomHalf = true);
+      } else if (_currentPage < _totalPages - 1) {
+        _showBottomHalf = false;
+        _renderPage(_currentPage + 1);
+      }
+    } else {
+      if (_currentPage < _totalPages - 1) {
+        _renderPage(_currentPage + 1);
+      }
     }
   }
 
@@ -561,12 +1016,32 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     _syncFullStateToPresentation();
   }
 
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.pageDown ||
+        key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.space) {
+      _nextPage();
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.pageUp ||
+        key == LogicalKeyboardKey.arrowLeft) {
+      _previousPage();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: _buildLayout(),
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _handleKeyEvent,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: _buildLayout(),
+        ),
       ),
     );
   }
@@ -663,7 +1138,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
           quarterTurns: _effectiveRotation,
           child: LayoutBuilder(
             builder: (context, constraints) {
-              return Stack(
+              Widget pageContent = Stack(
                 children: [
                   Image.memory(
                     _pageImage!.bytes,
@@ -672,13 +1147,17 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                   Positioned.fill(
                     child: DrawingCanvas(
                       strokes: _currentPageStrokes,
+                      textAnnotations: _currentPageTextAnnotations,
                       isEraserMode: _isEraserMode,
+                      isTextMode: _isTextMode,
                       currentColor: _currentColor,
                       currentThickness: _currentThickness,
                       currentPageIndex: _currentPage,
                       imageAspectRatio: _imageAspectRatio,
                       onStrokeComplete: _onStrokeComplete,
                       onStrokeErased: _onStrokeErased,
+                      onTextAnnotationErased: _onTextAnnotationErased,
+                      onTextTap: _showTextInputDialog,
                       onStylusStateChanged: (isActive) {
                         if (_isStylusDrawing != isActive) {
                           setState(() => _isStylusDrawing = isActive);
@@ -701,6 +1180,35 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                   ),
                 ],
               );
+
+              if (_autoCrop && _cropRect != null) {
+                final cr = _cropRect!;
+                pageContent = ClipRect(
+                  child: Align(
+                    alignment: FractionalOffset(
+                      cr.left / (1.0 - (cr.right - cr.left)),
+                      cr.top / (1.0 - (cr.bottom - cr.top)),
+                    ),
+                    widthFactor: cr.right - cr.left,
+                    heightFactor: cr.bottom - cr.top,
+                    child: pageContent,
+                  ),
+                );
+              }
+
+              if (_halfPageMode) {
+                pageContent = ClipRect(
+                  child: Align(
+                    alignment: _showBottomHalf
+                        ? Alignment.bottomCenter
+                        : Alignment.topCenter,
+                    heightFactor: 0.5,
+                    child: pageContent,
+                  ),
+                );
+              }
+
+              return pageContent;
             },
           ),
         ),
@@ -784,6 +1292,44 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
           )
         : const SizedBox.shrink();
 
+    final textButton = _document != null
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: IconButton(
+              onPressed: _toggleTextMode,
+              icon: Icon(
+                Icons.text_fields,
+                color: _isTextMode ? Colors.yellow : Colors.white,
+              ),
+              tooltip: 'Texte',
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final undoButton = _document != null
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: IconButton(
+              onPressed: _undoStack.isNotEmpty ? _undo : null,
+              icon: const Icon(Icons.undo),
+              color: Colors.white,
+              tooltip: 'Annuler',
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final redoButton = _document != null
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: IconButton(
+              onPressed: _redoStack.isNotEmpty ? _redo : null,
+              icon: const Icon(Icons.redo),
+              color: Colors.white,
+              tooltip: 'Rétablir',
+            ),
+          )
+        : const SizedBox.shrink();
+
     final clearButton = _document != null
         ? RotatedBox(
             quarterTurns: isVertical ? _rotation : 0,
@@ -794,6 +1340,24 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                 color: Colors.white,
               ),
               tooltip: 'Effacer tout',
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final bookmarkButton = _document != null
+        ? RotatedBox(
+            quarterTurns: isVertical ? _rotation : 0,
+            child: IconButton(
+              onPressed: _showBookmarkMenu,
+              icon: Icon(
+                _bookmarks.any((b) => b.pageIndex == _currentPage)
+                    ? Icons.bookmark
+                    : Icons.bookmark_border,
+                color: _bookmarks.any((b) => b.pageIndex == _currentPage)
+                    ? Colors.orange
+                    : Colors.white,
+              ),
+              tooltip: 'Signets',
             ),
           )
         : const SizedBox.shrink();
@@ -836,7 +1400,15 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                 const SizedBox(height: 4),
                 eraserButton,
                 const SizedBox(height: 4),
+                textButton,
+                const SizedBox(height: 4),
+                undoButton,
+                const SizedBox(height: 4),
+                redoButton,
+                const SizedBox(height: 4),
                 clearButton,
+                const SizedBox(height: 4),
+                bookmarkButton,
               ],
             ],
           ),
@@ -864,7 +1436,11 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                 separator,
                 colorButton,
                 eraserButton,
+                textButton,
+                undoButton,
+                redoButton,
                 clearButton,
+                bookmarkButton,
               ],
             ],
           ),
