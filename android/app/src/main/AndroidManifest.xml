@@ -27,6 +27,11 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- Samsung DeX: launch maximised -->
+            <meta-data
+              android:name="com.samsung.android.sdk.multiwindow.dex.LaunchWindowingMode"
+              android:value="maximized"
+              />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
