@@ -105,7 +105,6 @@ class DisplayManagerService {
     required List<Stroke> strokes,
     required double imageAspectRatio,
     bool halfPageMode = false,
-    bool showBottomHalf = false,
   }) async {
     if (!_isSecondaryDisplayActive) return;
     final data = jsonEncode({
@@ -117,7 +116,6 @@ class DisplayManagerService {
       'strokes': strokes.map((s) => s.toJson()).toList(),
       'imageAspectRatio': imageAspectRatio,
       'halfPageMode': halfPageMode,
-      'showBottomHalf': showBottomHalf,
     });
     await _displayManager.transferDataToPresentation(data);
   }

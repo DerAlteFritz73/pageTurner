@@ -26,7 +26,6 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
   int _rotation = 0;
   double _imageAspectRatio = 1.0;
   bool _halfPageMode = false;
-  bool _showBottomHalf = false;
 
   // Live stroke preview
   List<Offset> _livePoints = [];
@@ -60,7 +59,6 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
           _rotation = data['rotation'] as int;
           _imageAspectRatio = (data['imageAspectRatio'] as num?)?.toDouble() ?? 1.0;
           _halfPageMode = data['halfPageMode'] as bool? ?? false;
-          _showBottomHalf = data['showBottomHalf'] as bool? ?? false;
           if (data['pageImageBase64'] != null) {
             _pageImageBytes =
                 base64Decode(data['pageImageBase64'] as String);
@@ -156,14 +154,59 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                           );
 
                           if (_halfPageMode) {
-                            pageContent = ClipRect(
-                              child: Align(
-                                alignment: _showBottomHalf
-                                    ? Alignment.bottomCenter
-                                    : Alignment.topCenter,
-                                heightFactor: 0.5,
-                                child: pageContent,
+                            Widget buildHalfPanel(bool isTop) => Expanded(
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final panelH = constraints.maxHeight;
+                                  final panelW = constraints.maxWidth;
+                                  return ClipRect(
+                                    child: Align(
+                                      alignment: isTop
+                                          ? Alignment.topCenter
+                                          : Alignment.bottomCenter,
+                                      child: SizedBox(
+                                        width: panelW,
+                                        height: panelH * 2,
+                                        child: Stack(
+                                          children: [
+                                            Image.memory(
+                                              _pageImageBytes!,
+                                              fit: BoxFit.contain,
+                                            ),
+                                            Positioned.fill(
+                                              child: LayoutBuilder(
+                                                builder: (context, constraints) {
+                                                  final size = Size(
+                                                    constraints.maxWidth,
+                                                    constraints.maxHeight,
+                                                  );
+                                                  return CustomPaint(
+                                                    size: size,
+                                                    painter: DrawingCanvasPainter(
+                                                      strokes: _strokes,
+                                                      currentPoints: _livePoints,
+                                                      currentColor: _liveColor,
+                                                      currentThickness: _liveThickness,
+                                                      imageAspectRatio: _imageAspectRatio,
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
+                            );
+                            return Column(
+                              children: [
+                                buildHalfPanel(true),
+                                Container(height: 1, color: Colors.white24),
+                                buildHalfPanel(false),
+                              ],
                             );
                           }
 
