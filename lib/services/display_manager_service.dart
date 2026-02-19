@@ -14,8 +14,10 @@ class DisplayManagerService {
   int? _secondaryDisplayId;
   StreamSubscription? _displayChangeSub;
   DateTime _lastLiveUpdate = DateTime.now();
+  String _debugStatus = 'init...';
 
   bool get isSecondaryDisplayActive => _isSecondaryDisplayActive;
+  String get debugStatus => _debugStatus;
 
   Future<void> init({
     required void Function(bool hasSecondaryDisplay) onDisplayStatusChanged,
@@ -30,34 +32,67 @@ class DisplayManagerService {
   Future<void> _checkForDisplays(
     void Function(bool) onDisplayStatusChanged,
   ) async {
-    final displays = await _displayManager.getDisplays();
-    print('DisplayManager: found ${displays?.length ?? 0} displays');
-    if (displays != null) {
-      for (int i = 0; i < displays.length; i++) {
-        print('  Display $i: id=${displays[i].displayId}, name=${displays[i].name}');
+    _debugStatus = 'step: getDisplays...';
+    try {
+      final displays = await _displayManager.getDisplays();
+      final count = displays?.length ?? 0;
+      _debugStatus = 'step: got $count displays';
+
+      if (displays != null && displays.isNotEmpty) {
+        final names = <String>[];
+        for (int i = 0; i < displays.length; i++) {
+          final d = displays[i];
+          names.add('#$i id=${d.displayId} "${d.name}"');
+        }
+        _debugStatus = 'displays=$count\n${names.join('\n')}';
+      } else {
+        _debugStatus = 'displays=${displays == null ? "null" : "empty"}';
+        onDisplayStatusChanged(false);
+        return;
       }
-    }
-    if (displays != null && displays.length > 1) {
-      final secondaryDisplay = displays[1];
-      _secondaryDisplayId = secondaryDisplay.displayId;
-      if (!_isSecondaryDisplayActive) {
-        print('DisplayManager: showing secondary display on id=$_secondaryDisplayId');
-        final result = await _displayManager.showSecondaryDisplay(
-          displayId: _secondaryDisplayId!,
-          routerName: 'presentation',
-        );
-        print('DisplayManager: showSecondaryDisplay result=$result');
-        _isSecondaryDisplayActive = true;
+
+      if (displays.length > 1) {
+        final secondaryDisplay = displays[1];
+        final id = secondaryDisplay.displayId;
+        _debugStatus += '\nsecondary id=$id';
+
+        if (id == null) {
+          _debugStatus += '\nERR: displayId is null';
+          onDisplayStatusChanged(false);
+          return;
+        }
+
+        _secondaryDisplayId = id;
+        if (!_isSecondaryDisplayActive) {
+          _debugStatus += '\nshowing...';
+          try {
+            final result = await _displayManager.showSecondaryDisplay(
+              displayId: id,
+              routerName: 'presentation',
+            );
+            _debugStatus += '\nshow=$result';
+          } catch (e2) {
+            _debugStatus += '\nshow ERR: $e2';
+            onDisplayStatusChanged(false);
+            return;
+          }
+          _isSecondaryDisplayActive = true;
+        }
+        _debugStatus += '\nACTIVE';
+        onDisplayStatusChanged(true);
+      } else {
+        if (_isSecondaryDisplayActive && _secondaryDisplayId != null) {
+          await _displayManager.hideSecondaryDisplay(
+            displayId: _secondaryDisplayId!,
+          );
+        }
+        _isSecondaryDisplayActive = false;
+        _secondaryDisplayId = null;
+        _debugStatus += '\nno secondary';
+        onDisplayStatusChanged(false);
       }
-      onDisplayStatusChanged(true);
-    } else {
-      if (_isSecondaryDisplayActive && _secondaryDisplayId != null) {
-        await _displayManager.hideSecondaryDisplay(
-          displayId: _secondaryDisplayId!,
-        );
-      }
-      _isSecondaryDisplayActive = false;
-      _secondaryDisplayId = null;
+    } catch (e, stack) {
+      _debugStatus += '\nERR: $e\n${stack.toString().split('\n').take(3).join('\n')}';
       onDisplayStatusChanged(false);
     }
   }

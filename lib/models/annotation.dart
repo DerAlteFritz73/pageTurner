@@ -75,14 +75,90 @@ class Stroke {
   }
 }
 
+class Bookmark {
+  final String id;
+  final int pageIndex;
+  final String label;
+  final Color color;
+
+  Bookmark({
+    String? id,
+    required this.pageIndex,
+    required this.label,
+    Color? color,
+  })  : id = id ?? const Uuid().v4(),
+        color = color ?? const Color(0xFFFFD700); // gold
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'pageIndex': pageIndex,
+        'label': label,
+        'color': color.toARGB32(),
+      };
+
+  factory Bookmark.fromJson(Map<String, dynamic> json) => Bookmark(
+        id: json['id'] as String,
+        pageIndex: json['pageIndex'] as int,
+        label: json['label'] as String,
+        color: Color(json['color'] as int),
+      );
+}
+
+class TextAnnotation {
+  final String id;
+  final int pageIndex;
+  final String text;
+  final Offset position; // normalized 0.0-1.0
+  final double fontSize;
+  final Color color;
+
+  TextAnnotation({
+    String? id,
+    required this.pageIndex,
+    required this.text,
+    required this.position,
+    this.fontSize = 14.0,
+    Color? color,
+  })  : id = id ?? const Uuid().v4(),
+        color = color ?? const Color(0xFFFF0000);
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'pageIndex': pageIndex,
+        'text': text,
+        'x': position.dx,
+        'y': position.dy,
+        'fontSize': fontSize,
+        'color': color.toARGB32(),
+      };
+
+  factory TextAnnotation.fromJson(Map<String, dynamic> json) => TextAnnotation(
+        id: json['id'] as String,
+        pageIndex: json['pageIndex'] as int,
+        text: json['text'] as String,
+        position: Offset(
+          (json['x'] as num).toDouble(),
+          (json['y'] as num).toDouble(),
+        ),
+        fontSize: (json['fontSize'] as num?)?.toDouble() ?? 14.0,
+        color: Color(json['color'] as int),
+      );
+}
+
 class AnnotationData {
   final String pdfPath;
   final Map<int, List<Stroke>> strokesByPage;
+  final List<Bookmark> bookmarks;
+  final Map<int, List<TextAnnotation>> textAnnotationsByPage;
 
   AnnotationData({
     required this.pdfPath,
     Map<int, List<Stroke>>? strokesByPage,
-  }) : strokesByPage = strokesByPage ?? {};
+    List<Bookmark>? bookmarks,
+    Map<int, List<TextAnnotation>>? textAnnotationsByPage,
+  })  : strokesByPage = strokesByPage ?? {},
+        bookmarks = bookmarks ?? [],
+        textAnnotationsByPage = textAnnotationsByPage ?? {};
 
   List<Stroke> getStrokesForPage(int pageIndex) {
     return strokesByPage[pageIndex] ?? [];
@@ -101,10 +177,32 @@ class AnnotationData {
 
   void clearPage(int pageIndex) {
     strokesByPage[pageIndex]?.clear();
+    textAnnotationsByPage[pageIndex]?.clear();
   }
 
   void clearAll() {
     strokesByPage.clear();
+    textAnnotationsByPage.clear();
+  }
+
+  // Bookmark methods
+  void addBookmark(Bookmark bookmark) => bookmarks.add(bookmark);
+  void removeBookmark(String id) => bookmarks.removeWhere((b) => b.id == id);
+
+  // Text annotation methods
+  List<TextAnnotation> getTextAnnotationsForPage(int pageIndex) {
+    return textAnnotationsByPage[pageIndex] ?? [];
+  }
+
+  void addTextAnnotation(TextAnnotation annotation) {
+    textAnnotationsByPage.putIfAbsent(annotation.pageIndex, () => []);
+    textAnnotationsByPage[annotation.pageIndex]!.add(annotation);
+  }
+
+  void removeTextAnnotation(String id) {
+    for (final annotations in textAnnotationsByPage.values) {
+      annotations.removeWhere((a) => a.id == id);
+    }
   }
 
   Map<String, dynamic> toJson() {
@@ -113,9 +211,16 @@ class AnnotationData {
       strokesJson[pageIndex.toString()] =
           strokes.map((s) => s.toJson()).toList();
     });
+    final Map<String, dynamic> textAnnotationsJson = {};
+    textAnnotationsByPage.forEach((pageIndex, annotations) {
+      textAnnotationsJson[pageIndex.toString()] =
+          annotations.map((a) => a.toJson()).toList();
+    });
     return {
       'pdfPath': pdfPath,
       'strokesByPage': strokesJson,
+      'bookmarks': bookmarks.map((b) => b.toJson()).toList(),
+      'textAnnotationsByPage': textAnnotationsJson,
     };
   }
 
@@ -131,9 +236,26 @@ class AnnotationData {
       strokesByPage[pageIndex] = strokes;
     });
 
+    final bookmarksList = (json['bookmarks'] as List?)
+        ?.map((b) => Bookmark.fromJson(b as Map<String, dynamic>))
+        .toList();
+
+    final textAnnotationsJson =
+        json['textAnnotationsByPage'] as Map<String, dynamic>? ?? {};
+    final Map<int, List<TextAnnotation>> textAnnotationsByPage = {};
+    textAnnotationsJson.forEach((key, value) {
+      final pageIndex = int.parse(key);
+      final annotations = (value as List)
+          .map((a) => TextAnnotation.fromJson(a as Map<String, dynamic>))
+          .toList();
+      textAnnotationsByPage[pageIndex] = annotations;
+    });
+
     return AnnotationData(
       pdfPath: json['pdfPath'] as String,
       strokesByPage: strokesByPage,
+      bookmarks: bookmarksList,
+      textAnnotationsByPage: textAnnotationsByPage,
     );
   }
 
