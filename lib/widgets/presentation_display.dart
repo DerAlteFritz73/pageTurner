@@ -115,14 +115,14 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                   style: TextStyle(color: Colors.white, fontSize: 24),
                 ),
               )
-            : Column(
-                children: [
-                  // PDF aligned to top
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: RotatedBox(
-                        quarterTurns: _rotation,
+            : RotatedBox(
+                quarterTurns: _rotation,
+                child: Column(
+                  children: [
+                    // PDF aligned to top
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.topCenter,
                         child: Builder(builder: (context) {
                           Widget pageContent = Stack(
                             children: [
@@ -214,28 +214,25 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                         }),
                       ),
                     ),
-                  ),
-                  // Bottom bar
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    color: Colors.black54,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        RotatedBox(
-                          quarterTurns: _rotation,
-                          child: Text(
+                    // Bottom bar
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      color: Colors.black54,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
                             '${_currentPage + 1} / $_totalPages',
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 16,
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
       ),
     );
