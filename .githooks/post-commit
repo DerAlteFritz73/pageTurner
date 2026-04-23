@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# Post-commit hook: build release APK and deploy to android.kreilos.fr
+# The Gradle task chain (assembleRelease -> renameApk -> deployApk) handles
+# renaming and uploading automatically.
+
+echo "Building and deploying APK..."
+flutter build apk --release 2>&1
+
+if [ $? -eq 0 ]; then
+    echo "Build and deploy complete."
+else
+    echo "Warning: APK build/deploy failed (commit is still saved)."
+fi
