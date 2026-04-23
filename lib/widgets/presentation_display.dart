@@ -20,12 +20,15 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
       FlutterPresentationDisplay();
 
   Uint8List? _pageImageBytes;
+  Uint8List? _nextPageImageBytes;
   List<Stroke> _strokes = [];
+  List<Stroke> _nextPageStrokes = [];
   int _currentPage = 0;
   int _totalPages = 0;
   int _rotation = 0;
   double _imageAspectRatio = 1.0;
   bool _halfPageMode = false;
+  int _halfPageOffset = 0;
 
   // Live stroke preview
   List<Offset> _livePoints = [];
@@ -59,6 +62,7 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
           _rotation = data['rotation'] as int;
           _imageAspectRatio = (data['imageAspectRatio'] as num?)?.toDouble() ?? 1.0;
           _halfPageMode = data['halfPageMode'] as bool? ?? false;
+          _halfPageOffset = data['halfPageOffset'] as int? ?? 0;
           if (data['pageImageBase64'] != null) {
             _pageImageBytes =
                 base64Decode(data['pageImageBase64'] as String);
@@ -66,6 +70,19 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
           _strokes = (data['strokes'] as List)
               .map((s) => Stroke.fromJson(Map<String, dynamic>.from(s as Map)))
               .toList();
+          if (data['nextPageImageBase64'] != null) {
+            _nextPageImageBytes =
+                base64Decode(data['nextPageImageBase64'] as String);
+          } else {
+            _nextPageImageBytes = null;
+          }
+          if (data['nextPageStrokes'] != null) {
+            _nextPageStrokes = (data['nextPageStrokes'] as List)
+                .map((s) => Stroke.fromJson(Map<String, dynamic>.from(s as Map)))
+                .toList();
+          } else {
+            _nextPageStrokes = [];
+          }
           break;
         case 'strokeAdded':
           _strokes.add(
@@ -154,14 +171,29 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                           );
 
                           if (_halfPageMode) {
-                            Widget buildHalfPanel(bool isTop) => Expanded(
+                            final topImageBytes = _pageImageBytes!;
+                            final bottomImageBytes = _halfPageOffset == 1 && _nextPageImageBytes != null
+                                ? _nextPageImageBytes!
+                                : _pageImageBytes!;
+                            final topIsTopHalf = _halfPageOffset == 0;
+                            final bottomIsTopHalf = _halfPageOffset == 1;
+                            final topStrokes = _strokes;
+                            final bottomStrokes = _halfPageOffset == 1
+                                ? _nextPageStrokes
+                                : _strokes;
+
+                            Widget buildHalfPanel({
+                              required Uint8List imageBytes,
+                              required bool showTopHalf,
+                              required List<Stroke> strokes,
+                            }) => Expanded(
                               child: LayoutBuilder(
                                 builder: (context, constraints) {
                                   final panelH = constraints.maxHeight;
                                   final panelW = constraints.maxWidth;
                                   return ClipRect(
                                     child: Align(
-                                      alignment: isTop
+                                      alignment: showTopHalf
                                           ? Alignment.topCenter
                                           : Alignment.bottomCenter,
                                       child: SizedBox(
@@ -170,7 +202,7 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                                         child: Stack(
                                           children: [
                                             Image.memory(
-                                              _pageImageBytes!,
+                                              imageBytes,
                                               fit: BoxFit.contain,
                                             ),
                                             Positioned.fill(
@@ -183,7 +215,7 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                                                   return CustomPaint(
                                                     size: size,
                                                     painter: DrawingCanvasPainter(
-                                                      strokes: _strokes,
+                                                      strokes: strokes,
                                                       currentPoints: _livePoints,
                                                       currentColor: _liveColor,
                                                       currentThickness: _liveThickness,
@@ -203,9 +235,17 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                             );
                             return Column(
                               children: [
-                                buildHalfPanel(true),
+                                buildHalfPanel(
+                                  imageBytes: topImageBytes,
+                                  showTopHalf: topIsTopHalf,
+                                  strokes: topStrokes,
+                                ),
                                 Container(height: 1, color: Colors.white24),
-                                buildHalfPanel(false),
+                                buildHalfPanel(
+                                  imageBytes: bottomImageBytes,
+                                  showTopHalf: bottomIsTopHalf,
+                                  strokes: bottomStrokes,
+                                ),
                               ],
                             );
                           }

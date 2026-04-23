@@ -92,6 +92,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
 
   // Half-page mode
   bool _halfPageMode = false;
+  int _halfPageOffset = 0; // 0 = page-aligned, 1 = shifted by half
+  PdfPageImage? _nextPageImage; // pre-rendered next page for half-page transitions
 
   // Auto-crop
   bool _autoCrop = false;
@@ -168,6 +170,13 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       strokes: _currentPageStrokes,
       imageAspectRatio: _imageAspectRatio,
       halfPageMode: _halfPageMode,
+      halfPageOffset: _halfPageOffset,
+      nextPageImageBytes: _halfPageMode && _nextPageImage != null
+          ? _nextPageImage!.bytes
+          : null,
+      nextPageStrokes: _halfPageMode && _halfPageOffset == 1
+          ? (_annotationData?.getStrokesForPage(_currentPage + 1) ?? [])
+          : null,
     );
   }
 
@@ -707,9 +716,18 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                 title: const Text('Demi-page',
                     style: TextStyle(color: Colors.white)),
                 value: _halfPageMode,
-                onChanged: (value) {
-                  setState(() => _halfPageMode = value);
-                  Navigator.of(context).pop();
+                onChanged: (value) async {
+                  setState(() {
+                    _halfPageMode = value;
+                    _halfPageOffset = 0;
+                    _nextPageImage = null;
+                  });
+                  if (value && _document != null && _currentPage + 1 < _totalPages) {
+                    final img = await _renderPageImage(_currentPage + 1);
+                    setState(() => _nextPageImage = img);
+                  }
+                  _syncFullStateToPresentation();
+                  if (context.mounted) Navigator.of(context).pop();
                 },
                 activeTrackColor: Colors.lightBlueAccent,
               ),
@@ -872,6 +890,19 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     }
   }
 
+  Future<PdfPageImage?> _renderPageImage(int pageIndex) async {
+    if (_document == null || pageIndex < 0 || pageIndex >= _totalPages) return null;
+    final page = await _document!.getPage(pageIndex + 1);
+    final image = await page.render(
+      width: page.width * 3,
+      height: page.height * 3,
+      format: PdfPageImageFormat.png,
+      backgroundColor: '#FFFFFF',
+    );
+    await page.close();
+    return image;
+  }
+
   Future<void> _renderPage(int pageIndex) async {
     if (_document == null) return;
 
@@ -903,11 +934,19 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         cropRect = await _computeCropRect(pageImage.bytes);
       }
 
+      // Pre-render next page for half-page mode
+      PdfPageImage? nextImage;
+      if (_halfPageMode && pageIndex + 1 < _totalPages) {
+        nextImage = await _renderPageImage(pageIndex + 1);
+      }
+
       setState(() {
         _pageImage = pageImage;
         _currentPage = pageIndex;
         _imageAspectRatio = aspectRatio;
         _cropRect = cropRect;
+        _halfPageOffset = 0;
+        _nextPageImage = nextImage;
         _isLoading = false;
       });
 
@@ -977,11 +1016,75 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   }
 
   void _previousPage() {
-    if (_currentPage > 0) _renderPage(_currentPage - 1);
+    if (_halfPageMode) {
+      _halfPagePrevious();
+    } else {
+      if (_currentPage > 0) _renderPage(_currentPage - 1);
+    }
   }
 
   void _nextPage() {
-    if (_currentPage < _totalPages - 1) _renderPage(_currentPage + 1);
+    if (_halfPageMode) {
+      _halfPageNext();
+    } else {
+      if (_currentPage < _totalPages - 1) _renderPage(_currentPage + 1);
+    }
+  }
+
+  Future<void> _halfPageNext() async {
+    if (_halfPageOffset == 0) {
+      if (_currentPage >= _totalPages - 1) return;
+      // Shift to show bottom of current + top of next
+      if (_nextPageImage == null) {
+        final img = await _renderPageImage(_currentPage + 1);
+        if (img == null) return;
+        setState(() {
+          _nextPageImage = img;
+          _halfPageOffset = 1;
+        });
+      } else {
+        setState(() => _halfPageOffset = 1);
+      }
+      _syncFullStateToPresentation();
+    } else {
+      // Advance: current becomes the next page, pre-render the one after
+      final newPage = _currentPage + 1;
+      if (newPage >= _totalPages) return;
+      await _saveAnnotations();
+      final currentImage = _nextPageImage;
+      PdfPageImage? nextImage;
+      if (newPage + 1 < _totalPages) {
+        nextImage = await _renderPageImage(newPage + 1);
+      }
+      setState(() {
+        _pageImage = currentImage;
+        _currentPage = newPage;
+        _halfPageOffset = 0;
+        _nextPageImage = nextImage;
+      });
+      _syncFullStateToPresentation();
+    }
+  }
+
+  Future<void> _halfPagePrevious() async {
+    if (_halfPageOffset == 1) {
+      setState(() => _halfPageOffset = 0);
+      _syncFullStateToPresentation();
+    } else {
+      if (_currentPage <= 0) return;
+      // Go back: show bottom of previous + top of current
+      final newPage = _currentPage - 1;
+      await _saveAnnotations();
+      final prevImage = await _renderPageImage(newPage);
+      if (prevImage == null) return;
+      setState(() {
+        _nextPageImage = _pageImage;
+        _pageImage = prevImage;
+        _currentPage = newPage;
+        _halfPageOffset = 1;
+      });
+      _syncFullStateToPresentation();
+    }
   }
 
   void _rotateRight() {
@@ -1025,12 +1128,17 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     final content = Expanded(child: _buildContent());
     final controls = _buildControls();
 
-    // Controls always at the physical bottom to maximise PDF display width
-    return Column(
-      children: [
-        content,
-        controls,
-      ],
+    // Wrap everything in a single RotatedBox so the controls appear
+    // "under" the PDF in rotated space, giving the PDF the full
+    // physical screen dimension as its width.
+    return RotatedBox(
+      quarterTurns: _effectiveRotation,
+      child: Column(
+        children: [
+          content,
+          controls,
+        ],
+      ),
     );
   }
 
@@ -1055,13 +1163,10 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     }
 
     if (_pageImage == null) {
-      return Center(
-        child: RotatedBox(
-          quarterTurns: _effectiveRotation,
-          child: const Text(
-            'Aucun PDF sélectionné',
-            style: TextStyle(color: Colors.white, fontSize: 18),
-          ),
+      return const Center(
+        child: Text(
+          'Aucun PDF sélectionné',
+          style: TextStyle(color: Colors.white, fontSize: 18),
         ),
       );
     }
@@ -1069,64 +1174,84 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     // Fingers always interact; stylus drawing disables pan/scale temporarily.
     final canSwipe = !_isStylusDrawing && !_isZoomed && _document != null;
 
-    // Half-page mode: show top and bottom halves simultaneously in a 2-panel split.
+    // Half-page mode: scroll by half-pages so the bottom of the current page
+    // and the top of the next page are visible during transitions.
     if (_halfPageMode) {
-      Widget buildPanel(bool isTop) => Expanded(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final panelH = constraints.maxHeight;
-            final panelW = constraints.maxWidth;
-            return ClipRect(
-              child: Align(
-                alignment: isTop ? Alignment.topCenter : Alignment.bottomCenter,
-                child: SizedBox(
-                  width: panelW,
-                  height: panelH * 2,
-                  child: Stack(
-                    children: [
-                      Image.memory(_pageImage!.bytes, fit: BoxFit.contain),
-                      Positioned.fill(
-                        child: DrawingCanvas(
-                          strokes: _currentPageStrokes,
-                          textAnnotations: _currentPageTextAnnotations,
-                          isEraserMode: _isEraserMode,
-                          isTextMode: _isTextMode,
-                          currentColor: _currentColor,
-                          currentThickness: _currentThickness,
-                          currentPageIndex: _currentPage,
-                          imageAspectRatio: _imageAspectRatio,
-                          onStrokeComplete: _onStrokeComplete,
-                          onStrokeErased: _onStrokeErased,
-                          onTextAnnotationErased: _onTextAnnotationErased,
-                          onTextTap: _showTextInputDialog,
-                          onStylusStateChanged: (isActive) {
-                            if (_isStylusDrawing != isActive) {
-                              setState(() => _isStylusDrawing = isActive);
-                            }
-                          },
-                          onLivePointsChanged: _hasSecondaryDisplay
-                              ? (points) {
-                                  if (points.isEmpty) {
-                                    _displayService.clearLiveStroke();
-                                  } else {
-                                    _displayService.sendLiveStroke(
-                                      points: points,
-                                      color: _currentColor,
-                                      thickness: _currentThickness,
-                                    );
-                                  }
+      // offset 0: top panel = top half of current, bottom panel = bottom half of current
+      // offset 1: top panel = bottom half of current, bottom panel = top half of next
+      final topImageBytes = _pageImage!.bytes;
+      final bottomImageBytes = _halfPageOffset == 1 && _nextPageImage != null
+          ? _nextPageImage!.bytes
+          : _pageImage!.bytes;
+      final topIsTopHalf = _halfPageOffset == 0;
+      final bottomIsTopHalf = _halfPageOffset == 1;
+
+      final topPageIndex = _currentPage;
+      final bottomPageIndex = _halfPageOffset == 1 ? _currentPage + 1 : _currentPage;
+
+      Widget buildPanel({
+        required Uint8List imageBytes,
+        required bool showTopHalf,
+        required int pageIndex,
+      }) =>
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final panelH = constraints.maxHeight;
+                final panelW = constraints.maxWidth;
+                return ClipRect(
+                  child: Align(
+                    alignment: showTopHalf
+                        ? Alignment.topCenter
+                        : Alignment.bottomCenter,
+                    child: SizedBox(
+                      width: panelW,
+                      height: panelH * 2,
+                      child: Stack(
+                        children: [
+                          Image.memory(imageBytes, fit: BoxFit.contain),
+                          Positioned.fill(
+                            child: DrawingCanvas(
+                              strokes: _annotationData?.getStrokesForPage(pageIndex) ?? [],
+                              textAnnotations: _annotationData?.getTextAnnotationsForPage(pageIndex) ?? [],
+                              isEraserMode: _isEraserMode,
+                              isTextMode: _isTextMode,
+                              currentColor: _currentColor,
+                              currentThickness: _currentThickness,
+                              currentPageIndex: pageIndex,
+                              imageAspectRatio: _imageAspectRatio,
+                              onStrokeComplete: _onStrokeComplete,
+                              onStrokeErased: _onStrokeErased,
+                              onTextAnnotationErased: _onTextAnnotationErased,
+                              onTextTap: _showTextInputDialog,
+                              onStylusStateChanged: (isActive) {
+                                if (_isStylusDrawing != isActive) {
+                                  setState(() => _isStylusDrawing = isActive);
                                 }
-                              : null,
-                        ),
+                              },
+                              onLivePointsChanged: _hasSecondaryDisplay
+                                  ? (points) {
+                                      if (points.isEmpty) {
+                                        _displayService.clearLiveStroke();
+                                      } else {
+                                        _displayService.sendLiveStroke(
+                                          points: points,
+                                          color: _currentColor,
+                                          thickness: _currentThickness,
+                                        );
+                                      }
+                                    }
+                                  : null,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            );
-          },
-        ),
-      );
+                );
+              },
+            ),
+          );
 
       return GestureDetector(
         onHorizontalDragEnd: canSwipe
@@ -1139,15 +1264,20 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                 }
               }
             : null,
-        child: RotatedBox(
-          quarterTurns: _effectiveRotation,
-          child: Column(
-            children: [
-              buildPanel(true),
-              Container(height: 1, color: Colors.white24),
-              buildPanel(false),
-            ],
-          ),
+        child: Column(
+          children: [
+            buildPanel(
+              imageBytes: topImageBytes,
+              showTopHalf: topIsTopHalf,
+              pageIndex: topPageIndex,
+            ),
+            Container(height: 1, color: Colors.white24),
+            buildPanel(
+              imageBytes: bottomImageBytes,
+              showTopHalf: bottomIsTopHalf,
+              pageIndex: bottomPageIndex,
+            ),
+          ],
         ),
       );
     }
@@ -1170,8 +1300,6 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         panEnabled: !_isStylusDrawing && _isZoomed,
         scaleEnabled: !_isStylusDrawing,
         child: Center(
-        child: RotatedBox(
-          quarterTurns: _effectiveRotation,
           child: LayoutBuilder(
             builder: (context, constraints) {
               Widget pageContent = Stack(
@@ -1237,152 +1365,118 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
           ),
         ),
       ),
-      ),
     );
   }
 
   Widget _buildControls() {
-    final effectiveRotation = _effectiveRotation;
-    final isVertical = effectiveRotation == 1 || effectiveRotation == 3;
-
     final previousButton = IconButton(
       onPressed: _currentPage > 0 ? _previousPage : null,
-      icon: Icon(isVertical ? Icons.arrow_upward : Icons.arrow_back),
+      icon: const Icon(Icons.arrow_back),
       color: Colors.white,
     );
 
-    final openButton = RotatedBox(
-      quarterTurns: isVertical ? _rotation : 0,
-      child: IconButton(
-        onPressed: _pickAndOpenPdf,
-        icon: const Icon(Icons.folder_open),
-        color: Colors.white,
-        tooltip: 'Ouvrir',
-      ),
+    final openButton = IconButton(
+      onPressed: _pickAndOpenPdf,
+      icon: const Icon(Icons.folder_open),
+      color: Colors.white,
+      tooltip: 'Ouvrir',
     );
 
-    final paramsButton = RotatedBox(
-      quarterTurns: isVertical ? _rotation : 0,
-      child: IconButton(
-        onPressed: _showParamsMenu,
-        icon: const Icon(Icons.settings),
-        color: Colors.white,
-        tooltip: 'Paramètres',
-      ),
+    final paramsButton = IconButton(
+      onPressed: _showParamsMenu,
+      icon: const Icon(Icons.settings),
+      color: Colors.white,
+      tooltip: 'Paramètres',
     );
 
     final pageCounter = _document != null
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: Text(
-              '${_currentPage + 1} / $_totalPages',
-              style: const TextStyle(color: Colors.white),
-            ),
+        ? Text(
+            '${_currentPage + 1} / $_totalPages',
+            style: const TextStyle(color: Colors.white),
           )
         : const SizedBox.shrink();
 
     final nextButton = IconButton(
       onPressed: _currentPage < _totalPages - 1 ? _nextPage : null,
-      icon: Icon(isVertical ? Icons.arrow_downward : Icons.arrow_forward),
+      icon: const Icon(Icons.arrow_forward),
       color: Colors.white,
     );
 
     // Annotation controls (only show when PDF is open)
     final colorButton = _document != null
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: IconButton(
-              onPressed: _showColorPicker,
-              icon: Icon(
-                Icons.palette,
-                color: _currentColor == Colors.black ? Colors.white : _currentColor,
-              ),
-              tooltip: 'Couleur',
+        ? IconButton(
+            onPressed: _showColorPicker,
+            icon: Icon(
+              Icons.palette,
+              color: _currentColor == Colors.black ? Colors.white : _currentColor,
             ),
+            tooltip: 'Couleur',
           )
         : const SizedBox.shrink();
 
     final eraserButton = _document != null
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: IconButton(
-              onPressed: _toggleEraserMode,
-              icon: Icon(
-                Icons.cleaning_services,
-                color: _isEraserMode ? Colors.yellow : Colors.white,
-              ),
-              tooltip: 'Gomme',
+        ? IconButton(
+            onPressed: _toggleEraserMode,
+            icon: Icon(
+              Icons.cleaning_services,
+              color: _isEraserMode ? Colors.yellow : Colors.white,
             ),
+            tooltip: 'Gomme',
           )
         : const SizedBox.shrink();
 
     final textButton = _document != null
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: IconButton(
-              onPressed: _toggleTextMode,
-              icon: Icon(
-                Icons.text_fields,
-                color: _isTextMode ? Colors.yellow : Colors.white,
-              ),
-              tooltip: 'Texte',
+        ? IconButton(
+            onPressed: _toggleTextMode,
+            icon: Icon(
+              Icons.text_fields,
+              color: _isTextMode ? Colors.yellow : Colors.white,
             ),
+            tooltip: 'Texte',
           )
         : const SizedBox.shrink();
 
     final undoButton = _document != null
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: IconButton(
-              onPressed: _undoStack.isNotEmpty ? _undo : null,
-              icon: const Icon(Icons.undo),
-              color: Colors.white,
-              tooltip: 'Annuler',
-            ),
+        ? IconButton(
+            onPressed: _undoStack.isNotEmpty ? _undo : null,
+            icon: const Icon(Icons.undo),
+            color: Colors.white,
+            tooltip: 'Annuler',
           )
         : const SizedBox.shrink();
 
     final redoButton = _document != null
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: IconButton(
-              onPressed: _redoStack.isNotEmpty ? _redo : null,
-              icon: const Icon(Icons.redo),
-              color: Colors.white,
-              tooltip: 'Rétablir',
-            ),
+        ? IconButton(
+            onPressed: _redoStack.isNotEmpty ? _redo : null,
+            icon: const Icon(Icons.redo),
+            color: Colors.white,
+            tooltip: 'Rétablir',
           )
         : const SizedBox.shrink();
 
     final clearButton = _document != null
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: IconButton(
-              onPressed: _clearCurrentPage,
-              icon: const Icon(
-                Icons.delete_outline,
-                color: Colors.white,
-              ),
-              tooltip: 'Effacer tout',
+        ? IconButton(
+            onPressed: _clearCurrentPage,
+            icon: const Icon(
+              Icons.delete_outline,
+              color: Colors.white,
             ),
+            tooltip: 'Effacer tout',
           )
         : const SizedBox.shrink();
 
     final bookmarkButton = _document != null
-        ? RotatedBox(
-            quarterTurns: isVertical ? _rotation : 0,
-            child: IconButton(
-              onPressed: _showBookmarkMenu,
-              icon: Icon(
-                _bookmarks.any((b) => b.pageIndex == _currentPage)
-                    ? Icons.bookmark
-                    : Icons.bookmark_border,
-                color: _bookmarks.any((b) => b.pageIndex == _currentPage)
-                    ? Colors.orange
-                    : Colors.white,
-              ),
-              tooltip: 'Signets',
+        ? IconButton(
+            onPressed: _showBookmarkMenu,
+            icon: Icon(
+              _bookmarks.any((b) => b.pageIndex == _currentPage)
+                  ? Icons.bookmark
+                  : Icons.bookmark_border,
+              color: _bookmarks.any((b) => b.pageIndex == _currentPage)
+                  ? Colors.orange
+                  : Colors.white,
             ),
+            tooltip: 'Signets',
           )
         : const SizedBox.shrink();
 

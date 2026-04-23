@@ -105,9 +105,12 @@ class DisplayManagerService {
     required List<Stroke> strokes,
     required double imageAspectRatio,
     bool halfPageMode = false,
+    int halfPageOffset = 0,
+    List<int>? nextPageImageBytes,
+    List<Stroke>? nextPageStrokes,
   }) async {
     if (!_isSecondaryDisplayActive) return;
-    final data = jsonEncode({
+    final payload = <String, dynamic>{
       'action': 'fullSync',
       'currentPage': currentPage,
       'totalPages': totalPages,
@@ -116,8 +119,15 @@ class DisplayManagerService {
       'strokes': strokes.map((s) => s.toJson()).toList(),
       'imageAspectRatio': imageAspectRatio,
       'halfPageMode': halfPageMode,
-    });
-    await _displayManager.transferDataToPresentation(data);
+      'halfPageOffset': halfPageOffset,
+    };
+    if (nextPageImageBytes != null) {
+      payload['nextPageImageBase64'] = base64Encode(nextPageImageBytes);
+    }
+    if (nextPageStrokes != null) {
+      payload['nextPageStrokes'] = nextPageStrokes.map((s) => s.toJson()).toList();
+    }
+    await _displayManager.transferDataToPresentation(jsonEncode(payload));
   }
 
   Future<void> sendStrokeAdded(Stroke stroke) async {
