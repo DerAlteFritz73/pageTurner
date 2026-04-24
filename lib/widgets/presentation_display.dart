@@ -171,82 +171,52 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                           );
 
                           if (_halfPageMode) {
-                            final topImageBytes = _pageImageBytes!;
-                            final bottomImageBytes = _halfPageOffset == 1 && _nextPageImageBytes != null
-                                ? _nextPageImageBytes!
-                                : _pageImageBytes!;
-                            final topIsTopHalf = _halfPageOffset == 0;
-                            final bottomIsTopHalf = _halfPageOffset == 1;
-                            final topStrokes = _strokes;
-                            final bottomStrokes = _halfPageOffset == 1
-                                ? _nextPageStrokes
-                                : _strokes;
+                            return LayoutBuilder(
+                              builder: (context, constraints) {
+                                final viewW = constraints.maxWidth;
+                                final pageH = viewW / _imageAspectRatio;
+                                final scrollY = _halfPageOffset == 1 ? pageH / 2 : 0.0;
 
-                            Widget buildHalfPanel({
-                              required Uint8List imageBytes,
-                              required bool showTopHalf,
-                              required List<Stroke> strokes,
-                            }) => Expanded(
-                              child: LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final panelH = constraints.maxHeight;
-                                  final panelW = constraints.maxWidth;
-                                  return ClipRect(
-                                    child: Align(
-                                      alignment: showTopHalf
-                                          ? Alignment.topCenter
-                                          : Alignment.bottomCenter,
-                                      child: SizedBox(
-                                        width: panelW,
-                                        height: panelH * 2,
-                                        child: Stack(
-                                          children: [
-                                            Image.memory(
-                                              imageBytes,
-                                              fit: BoxFit.contain,
-                                            ),
-                                            Positioned.fill(
-                                              child: LayoutBuilder(
-                                                builder: (context, constraints) {
-                                                  final size = Size(
-                                                    constraints.maxWidth,
-                                                    constraints.maxHeight,
-                                                  );
-                                                  return CustomPaint(
-                                                    size: size,
-                                                    painter: DrawingCanvasPainter(
-                                                      strokes: strokes,
-                                                      currentPoints: _livePoints,
-                                                      currentColor: _liveColor,
-                                                      currentThickness: _liveThickness,
-                                                      imageAspectRatio: _imageAspectRatio,
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ),
-                                          ],
+                                Widget buildPageStack(Uint8List imgBytes, List<Stroke> strokes) => SizedBox(
+                                  width: viewW,
+                                  height: pageH,
+                                  child: Stack(
+                                    children: [
+                                      Image.memory(imgBytes, width: viewW, height: pageH, fit: BoxFit.fill),
+                                      Positioned.fill(
+                                        child: CustomPaint(
+                                          size: Size(viewW, pageH),
+                                          painter: DrawingCanvasPainter(
+                                            strokes: strokes,
+                                            currentPoints: _livePoints,
+                                            currentColor: _liveColor,
+                                            currentThickness: _liveThickness,
+                                            imageAspectRatio: _imageAspectRatio,
+                                          ),
                                         ),
                                       ),
+                                    ],
+                                  ),
+                                );
+
+                                return ClipRect(
+                                  child: OverflowBox(
+                                    alignment: Alignment.topCenter,
+                                    maxHeight: pageH * 2,
+                                    maxWidth: viewW,
+                                    child: Transform.translate(
+                                      offset: Offset(0, -scrollY),
+                                      child: Column(
+                                        children: [
+                                          buildPageStack(_pageImageBytes!, _strokes),
+                                          if (_nextPageImageBytes != null)
+                                            buildPageStack(_nextPageImageBytes!, _nextPageStrokes),
+                                        ],
+                                      ),
                                     ),
-                                  );
-                                },
-                              ),
-                            );
-                            return Column(
-                              children: [
-                                buildHalfPanel(
-                                  imageBytes: topImageBytes,
-                                  showTopHalf: topIsTopHalf,
-                                  strokes: topStrokes,
-                                ),
-                                Container(height: 1, color: Colors.white24),
-                                buildHalfPanel(
-                                  imageBytes: bottomImageBytes,
-                                  showTopHalf: bottomIsTopHalf,
-                                  strokes: bottomStrokes,
-                                ),
-                              ],
+                                  ),
+                                );
+                              },
                             );
                           }
 

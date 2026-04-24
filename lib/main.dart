@@ -1174,85 +1174,11 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     // Fingers always interact; stylus drawing disables pan/scale temporarily.
     final canSwipe = !_isStylusDrawing && !_isZoomed && _document != null;
 
-    // Half-page mode: scroll by half-pages so the bottom of the current page
-    // and the top of the next page are visible during transitions.
+    // Half-page mode: stack current + next page vertically, then shift the
+    // viewport down by half a page height on each "next" action.
+    // offset 0: viewport shows the full current page (top aligned)
+    // offset 1: viewport shows bottom half of current + top half of next
     if (_halfPageMode) {
-      // offset 0: top panel = top half of current, bottom panel = bottom half of current
-      // offset 1: top panel = bottom half of current, bottom panel = top half of next
-      final topImageBytes = _pageImage!.bytes;
-      final bottomImageBytes = _halfPageOffset == 1 && _nextPageImage != null
-          ? _nextPageImage!.bytes
-          : _pageImage!.bytes;
-      final topIsTopHalf = _halfPageOffset == 0;
-      final bottomIsTopHalf = _halfPageOffset == 1;
-
-      final topPageIndex = _currentPage;
-      final bottomPageIndex = _halfPageOffset == 1 ? _currentPage + 1 : _currentPage;
-
-      Widget buildPanel({
-        required Uint8List imageBytes,
-        required bool showTopHalf,
-        required int pageIndex,
-      }) =>
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final panelH = constraints.maxHeight;
-                final panelW = constraints.maxWidth;
-                return ClipRect(
-                  child: Align(
-                    alignment: showTopHalf
-                        ? Alignment.topCenter
-                        : Alignment.bottomCenter,
-                    child: SizedBox(
-                      width: panelW,
-                      height: panelH * 2,
-                      child: Stack(
-                        children: [
-                          Image.memory(imageBytes, fit: BoxFit.contain),
-                          Positioned.fill(
-                            child: DrawingCanvas(
-                              strokes: _annotationData?.getStrokesForPage(pageIndex) ?? [],
-                              textAnnotations: _annotationData?.getTextAnnotationsForPage(pageIndex) ?? [],
-                              isEraserMode: _isEraserMode,
-                              isTextMode: _isTextMode,
-                              currentColor: _currentColor,
-                              currentThickness: _currentThickness,
-                              currentPageIndex: pageIndex,
-                              imageAspectRatio: _imageAspectRatio,
-                              onStrokeComplete: _onStrokeComplete,
-                              onStrokeErased: _onStrokeErased,
-                              onTextAnnotationErased: _onTextAnnotationErased,
-                              onTextTap: _showTextInputDialog,
-                              onStylusStateChanged: (isActive) {
-                                if (_isStylusDrawing != isActive) {
-                                  setState(() => _isStylusDrawing = isActive);
-                                }
-                              },
-                              onLivePointsChanged: _hasSecondaryDisplay
-                                  ? (points) {
-                                      if (points.isEmpty) {
-                                        _displayService.clearLiveStroke();
-                                      } else {
-                                        _displayService.sendLiveStroke(
-                                          points: points,
-                                          color: _currentColor,
-                                          thickness: _currentThickness,
-                                        );
-                                      }
-                                    }
-                                  : null,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          );
-
       return GestureDetector(
         onHorizontalDragEnd: canSwipe
             ? (details) {
@@ -1264,20 +1190,75 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                 }
               }
             : null,
-        child: Column(
-          children: [
-            buildPanel(
-              imageBytes: topImageBytes,
-              showTopHalf: topIsTopHalf,
-              pageIndex: topPageIndex,
-            ),
-            Container(height: 1, color: Colors.white24),
-            buildPanel(
-              imageBytes: bottomImageBytes,
-              showTopHalf: bottomIsTopHalf,
-              pageIndex: bottomPageIndex,
-            ),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final viewW = constraints.maxWidth;
+            final pageH = viewW / _imageAspectRatio;
+            // Scroll offset: shift down by half a page height
+            final scrollY = _halfPageOffset == 1 ? pageH / 2 : 0.0;
+
+            Widget buildPageStack(Uint8List imgBytes, int pageIndex) => SizedBox(
+              width: viewW,
+              height: pageH,
+              child: Stack(
+                children: [
+                  Image.memory(imgBytes, width: viewW, height: pageH, fit: BoxFit.fill),
+                  Positioned.fill(
+                    child: DrawingCanvas(
+                      strokes: _annotationData?.getStrokesForPage(pageIndex) ?? [],
+                      textAnnotations: _annotationData?.getTextAnnotationsForPage(pageIndex) ?? [],
+                      isEraserMode: _isEraserMode,
+                      isTextMode: _isTextMode,
+                      currentColor: _currentColor,
+                      currentThickness: _currentThickness,
+                      currentPageIndex: pageIndex,
+                      imageAspectRatio: _imageAspectRatio,
+                      onStrokeComplete: _onStrokeComplete,
+                      onStrokeErased: _onStrokeErased,
+                      onTextAnnotationErased: _onTextAnnotationErased,
+                      onTextTap: _showTextInputDialog,
+                      onStylusStateChanged: (isActive) {
+                        if (_isStylusDrawing != isActive) {
+                          setState(() => _isStylusDrawing = isActive);
+                        }
+                      },
+                      onLivePointsChanged: _hasSecondaryDisplay
+                          ? (points) {
+                              if (points.isEmpty) {
+                                _displayService.clearLiveStroke();
+                              } else {
+                                _displayService.sendLiveStroke(
+                                  points: points,
+                                  color: _currentColor,
+                                  thickness: _currentThickness,
+                                );
+                              }
+                            }
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+            );
+
+            return ClipRect(
+              child: OverflowBox(
+                alignment: Alignment.topCenter,
+                maxHeight: pageH * 2,
+                maxWidth: viewW,
+                child: Transform.translate(
+                  offset: Offset(0, -scrollY),
+                  child: Column(
+                    children: [
+                      buildPageStack(_pageImage!.bytes, _currentPage),
+                      if (_nextPageImage != null)
+                        buildPageStack(_nextPageImage!.bytes, _currentPage + 1),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       );
     }
