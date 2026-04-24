@@ -29,6 +29,7 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
   double _imageAspectRatio = 1.0;
   bool _halfPageMode = false;
   int _halfPageOffset = 0;
+  double _scrollProgress = 0.0;
 
   // Live stroke preview
   List<Offset> _livePoints = [];
@@ -83,6 +84,7 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
           } else {
             _nextPageStrokes = [];
           }
+          _scrollProgress = _halfPageOffset * 0.5;
           break;
         case 'strokeAdded':
           _strokes.add(
@@ -109,6 +111,9 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
           break;
         case 'liveStrokeClear':
           _livePoints = [];
+          break;
+        case 'scrollProgress':
+          _scrollProgress = (data['progress'] as num).toDouble();
           break;
       }
     });
@@ -177,7 +182,7 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                                 final viewW = constraints.maxWidth;
                                 final pageH = viewW / _imageAspectRatio;
                                 final totalH = pageH * 2 + pageGap;
-                                final scrollY = _halfPageOffset == 1 ? totalH / 4 : 0.0;
+                                final scrollY = _scrollProgress * (totalH / 2);
 
                                 Widget buildPageStack(Uint8List imgBytes, List<Stroke> strokes) => SizedBox(
                                   width: viewW,

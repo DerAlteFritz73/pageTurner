@@ -148,6 +148,15 @@ class DisplayManagerService {
     await _displayManager.transferDataToPresentation(data);
   }
 
+  Future<void> sendScrollProgress(double progress) async {
+    if (!_isSecondaryDisplayActive) return;
+    final data = jsonEncode({
+      'action': 'scrollProgress',
+      'progress': progress,
+    });
+    await _displayManager.transferDataToPresentation(data);
+  }
+
   Future<void> sendLiveStroke({
     required List<Offset> points,
     required Color color,
