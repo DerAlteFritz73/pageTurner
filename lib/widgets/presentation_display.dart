@@ -171,11 +171,13 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                           );
 
                           if (_halfPageMode) {
+                            const pageGap = 20.0;
                             return LayoutBuilder(
                               builder: (context, constraints) {
                                 final viewW = constraints.maxWidth;
                                 final pageH = viewW / _imageAspectRatio;
-                                final scrollY = _halfPageOffset == 1 ? pageH / 2 : 0.0;
+                                final totalH = pageH * 2 + pageGap;
+                                final scrollY = _halfPageOffset == 1 ? totalH / 4 : 0.0;
 
                                 Widget buildPageStack(Uint8List imgBytes, List<Stroke> strokes) => SizedBox(
                                   width: viewW,
@@ -202,13 +204,14 @@ class _PresentationDisplayScreenState extends State<PresentationDisplayScreen> {
                                 return ClipRect(
                                   child: OverflowBox(
                                     alignment: Alignment.topCenter,
-                                    maxHeight: pageH * 2,
+                                    maxHeight: totalH,
                                     maxWidth: viewW,
                                     child: Transform.translate(
                                       offset: Offset(0, -scrollY),
                                       child: Column(
                                         children: [
                                           buildPageStack(_pageImageBytes!, _strokes),
+                                          SizedBox(height: pageGap),
                                           if (_nextPageImageBytes != null)
                                             buildPageStack(_nextPageImageBytes!, _nextPageStrokes),
                                         ],

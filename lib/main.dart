@@ -94,9 +94,10 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   bool _halfPageMode = false;
   int _halfPageOffset = 0; // 0 = page-aligned, 1 = shifted by half
   PdfPageImage? _nextPageImage; // pre-rendered next page for half-page transitions
+  static const double _pageGap = 20.0;
   late final AnimationController _halfPageAnimController = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 400),
+    duration: const Duration(milliseconds: 2500),
   );
   double _halfPageScrollFrom = 0.0;
   double _halfPageScrollTo = 0.0;
@@ -166,7 +167,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   }
 
   double get _halfPageScrollProgress {
-    final t = Curves.easeInOut.transform(_halfPageAnimController.value);
+    final t = _halfPageAnimController.value;
     return _halfPageScrollFrom + (_halfPageScrollTo - _halfPageScrollFrom) * t;
   }
 
@@ -1257,10 +1258,12 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
           builder: (context, constraints) {
             final viewW = constraints.maxWidth;
             final pageH = viewW / _imageAspectRatio;
-            // Scroll offset: shift down by half a page height
-            final scrollY = _halfPageAnimating
-                ? _halfPageScrollProgress * pageH
-                : _halfPageOffset * pageH / 2;
+            final totalH = pageH * 2 + _pageGap;
+            // progress 0.0 = top of page, 0.5 = half page down, 1.0 = full page down
+            final progress = _halfPageAnimating
+                ? _halfPageScrollProgress
+                : _halfPageOffset * 0.5;
+            final scrollY = progress * (totalH / 2);
 
             Widget buildPageStack(Uint8List imgBytes, int pageIndex) => SizedBox(
               width: viewW,
@@ -1309,13 +1312,14 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
             return ClipRect(
               child: OverflowBox(
                 alignment: Alignment.topCenter,
-                maxHeight: pageH * 2,
+                maxHeight: totalH,
                 maxWidth: viewW,
                 child: Transform.translate(
                   offset: Offset(0, -scrollY),
                   child: Column(
                     children: [
                       buildPageStack(_pageImage!.bytes, _currentPage),
+                      SizedBox(height: _pageGap),
                       if (_nextPageImage != null)
                         buildPageStack(_nextPageImage!.bytes, _currentPage + 1),
                     ],
