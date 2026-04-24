@@ -95,6 +95,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   int _halfPageOffset = 0; // 0 = page-aligned, 1 = shifted by half
   PdfPageImage? _nextPageImage; // pre-rendered next page for half-page transitions
   static const double _pageGap = 20.0;
+  double _scrollSpeedSetting = 2.0; // 0 = instant, 5 = very slow
   late final AnimationController _halfPageAnimController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1500),
@@ -752,6 +753,28 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                 },
                 activeTrackColor: Colors.lightBlueAccent,
               ),
+              // Scroll speed slider
+              ListTile(
+                leading: const Icon(Icons.speed, color: Colors.white),
+                title: const Text('Vitesse de défilement',
+                    style: TextStyle(color: Colors.white)),
+                subtitle: Text(
+                  _scrollSpeedSetting == 0 ? 'Instantané' : '${_scrollSpeedSetting.toStringAsFixed(1)}s',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ),
+              Slider(
+                value: _scrollSpeedSetting,
+                min: 0,
+                max: 5,
+                divisions: 10,
+                activeColor: Colors.lightBlueAccent,
+                inactiveColor: Colors.white24,
+                label: _scrollSpeedSetting == 0 ? 'Instantané' : '${_scrollSpeedSetting.toStringAsFixed(1)}s',
+                onChanged: (value) {
+                  setState(() => _scrollSpeedSetting = value);
+                },
+              ),
               const Divider(color: Colors.white24),
               // Debug info
               ExpansionTile(
@@ -1067,6 +1090,15 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   bool _halfPageAnimating = false;
 
   void _animateHalfPageScroll(double from, double to, VoidCallback onComplete) {
+    if (_scrollSpeedSetting == 0) {
+      _halfPageScrollFrom = to;
+      _halfPageScrollTo = to;
+      onComplete();
+      return;
+    }
+
+    final durationMs = (_scrollSpeedSetting * 1000).round();
+    _halfPageAnimController.duration = Duration(milliseconds: durationMs);
     _halfPageScrollFrom = from;
     _halfPageScrollTo = to;
     _halfPageAnimating = true;
@@ -1194,8 +1226,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   }
 
   Widget _buildLayout() {
-    final content = Expanded(child: _buildContent());
     final controls = _buildControls();
+    final showNavButtons = _document != null && _pageImage != null;
 
     // Wrap everything in a single RotatedBox so the controls appear
     // "under" the PDF in rotated space, giving the PDF the full
@@ -1204,7 +1236,35 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       quarterTurns: _effectiveRotation,
       child: Column(
         children: [
-          content,
+          Expanded(
+            child: Stack(
+              children: [
+                Positioned.fill(child: _buildContent()),
+                if (showNavButtons)
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: IconButton(
+                      icon: const Icon(Icons.chevron_left, color: Colors.white54, size: 36),
+                      onPressed: _currentPage > 0 || (_halfPageMode && _halfPageOffset > 0)
+                          ? _previousPage
+                          : null,
+                    ),
+                  ),
+                if (showNavButtons)
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: IconButton(
+                      icon: const Icon(Icons.chevron_right, color: Colors.white54, size: 36),
+                      onPressed: _currentPage < _totalPages - 1 || (_halfPageMode && _halfPageOffset > 0)
+                          ? _nextPage
+                          : null,
+                    ),
+                  ),
+              ],
+            ),
+          ),
           controls,
         ],
       ),
