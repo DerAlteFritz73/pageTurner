@@ -97,7 +97,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   static const double _pageGap = 20.0;
   late final AnimationController _halfPageAnimController = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 2500),
+    duration: const Duration(milliseconds: 1500),
   );
   double _halfPageScrollFrom = 0.0;
   double _halfPageScrollTo = 0.0;
@@ -1072,7 +1072,12 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     _halfPageAnimating = true;
     _halfPageAnimController.reset();
 
-    void listener() => setState(() {});
+    void listener() {
+      setState(() {});
+      if (_hasSecondaryDisplay) {
+        _displayService.sendScrollProgress(_halfPageScrollProgress);
+      }
+    }
     void statusListener(AnimationStatus status) {
       if (status == AnimationStatus.completed) {
         _halfPageAnimController.removeListener(listener);
