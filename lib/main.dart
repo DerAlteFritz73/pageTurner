@@ -67,7 +67,7 @@ class PdfViewerPage extends StatefulWidget {
   State<PdfViewerPage> createState() => _PdfViewerPageState();
 }
 
-class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserver {
+class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserver, TickerProviderStateMixin {
   PdfDocument? _document;
   PdfPageImage? _pageImage;
   int _currentPage = 0;
@@ -94,6 +94,19 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   bool _halfPageMode = false;
   int _halfPageOffset = 0; // 0 = page-aligned, 1 = shifted by half
   PdfPageImage? _nextPageImage; // pre-rendered next page for half-page transitions
+  late final AnimationController _halfPageAnimController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 400),
+  );
+  double _halfPageScrollFrom = 0.0;
+  double _halfPageScrollTo = 0.0;
+
+  // Normal page turn animation
+  late final AnimationController _pageTurnAnimController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  );
+  PdfPageImage? _previousPageImage;
 
   // Auto-crop
   bool _autoCrop = false;
@@ -141,6 +154,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
 
   @override
   void dispose() {
+    _halfPageAnimController.dispose();
+    _pageTurnAnimController.dispose();
     _displayService.dispose();
     _transformationController.removeListener(_onTransformChanged);
     _transformationController.dispose();
@@ -148,6 +163,11 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     _saveAnnotations();
     _document?.close();
     super.dispose();
+  }
+
+  double get _halfPageScrollProgress {
+    final t = Curves.easeInOut.transform(_halfPageAnimController.value);
+    return _halfPageScrollFrom + (_halfPageScrollTo - _halfPageScrollFrom) * t;
   }
 
   void _onTransformChanged() {
@@ -940,6 +960,11 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         nextImage = await _renderPageImage(pageIndex + 1);
       }
 
+      final hadPreviousPage = _pageImage != null && pageIndex != _currentPage;
+      if (hadPreviousPage) {
+        _previousPageImage = _pageImage;
+      }
+
       setState(() {
         _pageImage = pageImage;
         _currentPage = pageIndex;
@@ -949,6 +974,13 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
         _nextPageImage = nextImage;
         _isLoading = false;
       });
+
+      if (hadPreviousPage && !_halfPageMode) {
+        _pageTurnAnimController.reset();
+        _pageTurnAnimController.forward().then((_) {
+          setState(() => _previousPageImage = null);
+        });
+      }
 
       _syncFullStateToPresentation();
     } catch (e) {
@@ -1031,59 +1063,90 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     }
   }
 
+  bool _halfPageAnimating = false;
+
+  void _animateHalfPageScroll(double from, double to, VoidCallback onComplete) {
+    _halfPageScrollFrom = from;
+    _halfPageScrollTo = to;
+    _halfPageAnimating = true;
+    _halfPageAnimController.reset();
+
+    void listener() => setState(() {});
+    void statusListener(AnimationStatus status) {
+      if (status == AnimationStatus.completed) {
+        _halfPageAnimController.removeListener(listener);
+        _halfPageAnimController.removeStatusListener(statusListener);
+        _halfPageAnimating = false;
+        onComplete();
+      }
+    }
+
+    _halfPageAnimController.addListener(listener);
+    _halfPageAnimController.addStatusListener(statusListener);
+    _halfPageAnimController.forward();
+  }
+
   Future<void> _halfPageNext() async {
+    if (_halfPageAnimating) return;
     if (_halfPageOffset == 0) {
       if (_currentPage >= _totalPages - 1) return;
-      // Shift to show bottom of current + top of next
       if (_nextPageImage == null) {
         final img = await _renderPageImage(_currentPage + 1);
         if (img == null) return;
-        setState(() {
-          _nextPageImage = img;
-          _halfPageOffset = 1;
-        });
-      } else {
-        setState(() => _halfPageOffset = 1);
+        setState(() => _nextPageImage = img);
       }
-      _syncFullStateToPresentation();
+      _animateHalfPageScroll(0.0, 0.5, () {
+        setState(() => _halfPageOffset = 1);
+        _syncFullStateToPresentation();
+      });
     } else {
-      // Advance: current becomes the next page, pre-render the one after
       final newPage = _currentPage + 1;
       if (newPage >= _totalPages) return;
-      await _saveAnnotations();
-      final currentImage = _nextPageImage;
-      PdfPageImage? nextImage;
-      if (newPage + 1 < _totalPages) {
-        nextImage = await _renderPageImage(newPage + 1);
-      }
-      setState(() {
-        _pageImage = currentImage;
-        _currentPage = newPage;
-        _halfPageOffset = 0;
-        _nextPageImage = nextImage;
+      _animateHalfPageScroll(0.5, 1.0, () async {
+        await _saveAnnotations();
+        final currentImage = _nextPageImage;
+        PdfPageImage? nextImage;
+        if (newPage + 1 < _totalPages) {
+          nextImage = await _renderPageImage(newPage + 1);
+        }
+        setState(() {
+          _pageImage = currentImage;
+          _currentPage = newPage;
+          _halfPageOffset = 0;
+          _halfPageScrollFrom = 0.0;
+          _halfPageScrollTo = 0.0;
+          _nextPageImage = nextImage;
+        });
+        _syncFullStateToPresentation();
       });
-      _syncFullStateToPresentation();
     }
   }
 
   Future<void> _halfPagePrevious() async {
+    if (_halfPageAnimating) return;
     if (_halfPageOffset == 1) {
-      setState(() => _halfPageOffset = 0);
-      _syncFullStateToPresentation();
+      _animateHalfPageScroll(0.5, 0.0, () {
+        setState(() => _halfPageOffset = 0);
+        _syncFullStateToPresentation();
+      });
     } else {
       if (_currentPage <= 0) return;
-      // Go back: show bottom of previous + top of current
       final newPage = _currentPage - 1;
       await _saveAnnotations();
       final prevImage = await _renderPageImage(newPage);
       if (prevImage == null) return;
+      // Swap images: previous page becomes current, current becomes next
       setState(() {
         _nextPageImage = _pageImage;
         _pageImage = prevImage;
         _currentPage = newPage;
-        _halfPageOffset = 1;
+        _halfPageScrollFrom = 1.0;
+        _halfPageScrollTo = 1.0;
       });
-      _syncFullStateToPresentation();
+      _animateHalfPageScroll(1.0, 0.5, () {
+        setState(() => _halfPageOffset = 1);
+        _syncFullStateToPresentation();
+      });
     }
   }
 
@@ -1195,7 +1258,9 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
             final viewW = constraints.maxWidth;
             final pageH = viewW / _imageAspectRatio;
             // Scroll offset: shift down by half a page height
-            final scrollY = _halfPageOffset == 1 ? pageH / 2 : 0.0;
+            final scrollY = _halfPageAnimating
+                ? _halfPageScrollProgress * pageH
+                : _halfPageOffset * pageH / 2;
 
             Widget buildPageStack(Uint8List imgBytes, int pageIndex) => SizedBox(
               width: viewW,
@@ -1338,6 +1403,27 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                     heightFactor: cr.bottom - cr.top,
                     child: pageContent,
                   ),
+                );
+              }
+
+              if (_previousPageImage != null) {
+                return AnimatedBuilder(
+                  animation: _pageTurnAnimController,
+                  builder: (context, child) {
+                    final t = Curves.easeInOut.transform(_pageTurnAnimController.value);
+                    return Stack(
+                      children: [
+                        Opacity(
+                          opacity: 1.0 - t,
+                          child: Image.memory(_previousPageImage!.bytes, fit: BoxFit.contain),
+                        ),
+                        Opacity(
+                          opacity: t,
+                          child: pageContent,
+                        ),
+                      ],
+                    );
+                  },
                 );
               }
 
