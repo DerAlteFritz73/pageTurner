@@ -63,11 +63,26 @@ tasks.register("renameApk") {
 
 tasks.register("deployApk") {
     doLast {
+        val remoteUser = "chuck"
+        val remoteHost = "teutonia.kreilos.fr"
+        val remoteDir = "/var/www/android"
         val versionName = android.defaultConfig.versionName ?: "unknown"
         val apkName = "leggio-${versionName}.apk"
         val apkPath = "${project.rootDir}/../build/app/outputs/flutter-apk/${apkName}"
         exec {
-            commandLine("scp", apkPath, "chuck@teutonia.kreilos.fr:/var/www/android/${apkName}")
+            commandLine("scp", apkPath, "${remoteUser}@${remoteHost}:${remoteDir}/${apkName}")
+        }
+        exec {
+            commandLine("ssh", "${remoteUser}@${remoteHost}",
+                """cd ${remoteDir} && ls -t *.apk | awk 'BEGIN {
+                    print "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Leggio APK</title>"
+                    print "<style>body{font-family:sans-serif;max-width:600px;margin:40px auto;padding:0 20px}"
+                    print "a{display:block;padding:8px 0;color:#1a73e8;text-decoration:none}"
+                    print "a:hover{text-decoration:underline}</style></head><body>"
+                    print "<h1>Leggio</h1>"
+                }
+                { print "<a href=\"" $0 "\">" $0 "</a>" }
+                END { print "</body></html>" }' > index.html""")
         }
         println("Deployed: https://android.kreilos.fr/${apkName}")
     }
