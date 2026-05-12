@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 
 import 'models/annotation.dart';
+import 'pages/imslp_search_page.dart';
 import 'services/display_manager_service.dart';
 import 'widgets/drawing_canvas.dart';
 import 'widgets/presentation_display.dart';
@@ -841,6 +842,17 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     );
   }
 
+  Future<void> _openImslpSearch() async {
+    final selectedPath = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (context) => const ImslpSearchPage(),
+      ),
+    );
+    if (selectedPath != null && mounted) {
+      await _openPdf(selectedPath);
+    }
+  }
+
   Future<void> _pickAndOpenPdf() async {
     final choice = await showDialog<String>(
       context: context,
@@ -864,6 +876,11 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
               icon: const Icon(Icons.cloud),
               label: const Text('Cloud'),
             ),
+            TextButton.icon(
+              onPressed: () => Navigator.of(context).pop('imslp'),
+              icon: const Icon(Icons.library_music),
+              label: const Text('IMSLP'),
+            ),
           ],
         ),
       ),
@@ -877,6 +894,12 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       selectedPath = await Navigator.of(context).push<String>(
         MaterialPageRoute(
           builder: (context) => FileBrowserPage(rotation: _rotation),
+        ),
+      );
+    } else if (choice == 'imslp') {
+      selectedPath = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (context) => const ImslpSearchPage(),
         ),
       );
     } else if (choice == 'cloud') {
@@ -1518,6 +1541,13 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
       tooltip: 'Ouvrir',
     );
 
+    final imslpButton = IconButton(
+      onPressed: _openImslpSearch,
+      icon: const Icon(Icons.search),
+      color: Colors.white,
+      tooltip: 'IMSLP',
+    );
+
     final paramsButton = IconButton(
       onPressed: _showParamsMenu,
       icon: const Icon(Icons.settings),
@@ -1636,6 +1666,8 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
             previousButton,
             const SizedBox(width: 8),
             openButton,
+            const SizedBox(width: 8),
+            imslpButton,
             const SizedBox(width: 8),
             paramsButton,
             const SizedBox(width: 8),
