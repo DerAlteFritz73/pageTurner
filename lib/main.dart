@@ -7,7 +7,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 
 import 'models/annotation.dart';
-import 'pages/imslp_search_page.dart';
+import 'pages/continuo_page.dart';
+import 'pages/imslp_offline_search_page.dart';
 import 'services/display_manager_service.dart';
 import 'widgets/drawing_canvas.dart';
 import 'widgets/presentation_display.dart';
@@ -845,7 +846,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   Future<void> _openImslpSearch() async {
     final selectedPath = await Navigator.of(context).push<String>(
       MaterialPageRoute(
-        builder: (context) => const ImslpSearchPage(),
+        builder: (context) => const ImslpOfflineSearchPage(),
       ),
     );
     if (selectedPath != null && mounted) {
@@ -881,12 +882,24 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
               icon: const Icon(Icons.library_music),
               label: const Text('IMSLP'),
             ),
+            TextButton.icon(
+              onPressed: () => Navigator.of(context).pop('continuo'),
+              icon: const Icon(Icons.music_note),
+              label: const Text('Continuo'),
+            ),
           ],
         ),
       ),
     );
 
     if (choice == null || !mounted) return;
+
+    if (choice == 'continuo') {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ContinuoPage()),
+      );
+      return;
+    }
 
     String? selectedPath;
 
@@ -899,7 +912,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     } else if (choice == 'imslp') {
       selectedPath = await Navigator.of(context).push<String>(
         MaterialPageRoute(
-          builder: (context) => const ImslpSearchPage(),
+          builder: (context) => const ImslpOfflineSearchPage(),
         ),
       );
     } else if (choice == 'cloud') {
