@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.3.41+44
+version: 0.3.42+45
 
 environment:
   sdk: ^3.10.4
@@ -58,6 +58,18 @@ dependencies:
 
   # App directories for IMSLP downloads
   path_provider: ^2.1.0
+
+  # SQLite for offline IMSLP database
+  sqflite: ^2.4.2
+
+  # XML parsing for MusicXML
+  xml: ^6.5.0
+
+  # Music notation engraving (Verovio via FFI)
+  verovio_flutter: ^0.3.0
+
+  # SVG rendering for Verovio output
+  flutter_svg: ^2.0.0
 
 dev_dependencies:
   flutter_test:
