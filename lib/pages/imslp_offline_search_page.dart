@@ -34,14 +34,14 @@ class _ImslpOfflineSearchPageState extends State<ImslpOfflineSearchPage> {
   List<String> _availableLanguages = [];
   List<String> _availableKeys = [];
 
-  // DB download state
+  // DB sync/download state
   bool _dbAvailable = true;
+  bool _isSyncing = false;
+  int _syncCount = 0;
   bool _isDownloading = false;
   double _downloadProgress = 0;
   String? _downloadError;
-  final _urlController = TextEditingController(
-    text: 'https://teutonia.kreilos.fr/db/imslp.db',
-  );
+  final _urlController = TextEditingController();
 
   @override
   void initState() {
@@ -66,6 +66,41 @@ class _ImslpOfflineSearchPageState extends State<ImslpOfflineSearchPage> {
     if (mounted) {
       setState(() => _dbAvailable = available);
       if (available) _loadFilterOptions();
+    }
+  }
+
+  Future<void> _syncFromImslp() async {
+    setState(() {
+      _isSyncing = true;
+      _syncCount = 0;
+      _downloadError = null;
+    });
+
+    try {
+      await _dbService.syncFromApi(
+        onProgress: (count) {
+          if (mounted) setState(() => _syncCount = count);
+        },
+      );
+
+      if (mounted) {
+        final available = await _dbService.isAvailable;
+        setState(() {
+          _dbAvailable = available;
+          _isSyncing = false;
+        });
+        if (available) {
+          _searchService = ImslpDbSearchService(_dbService);
+          _loadFilterOptions();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _downloadError = 'Erreur: $e';
+          _isSyncing = false;
+        });
+      }
     }
   }
 
@@ -510,32 +545,13 @@ class _ImslpOfflineSearchPageState extends State<ImslpOfflineSearchPage> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Téléchargez la base de données depuis votre serveur '
-              'ou lancez l\'export sur teutonia.kreilos.fr.',
+              'Téléchargez la base de données SQLite\n'
+              'pour rechercher des partitions hors ligne.',
               style: TextStyle(color: Colors.white54, fontSize: 13),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
 
-            // URL field
-            TextField(
-              controller: _urlController,
-              enabled: !_isDownloading,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-              decoration: InputDecoration(
-                labelText: 'URL de la base SQLite',
-                labelStyle: const TextStyle(color: Colors.white38),
-                filled: true,
-                fillColor: Colors.grey[850],
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Download button / progress
             if (_isDownloading) ...[
               LinearProgressIndicator(
                 value: _downloadProgress > 0 ? _downloadProgress : null,
@@ -546,12 +562,48 @@ class _ImslpOfflineSearchPageState extends State<ImslpOfflineSearchPage> {
               Text(
                 _downloadProgress > 0
                     ? '${(_downloadProgress * 100).toStringAsFixed(0)} %'
-                    : 'Téléchargement...',
+                    : 'Téléchargement…',
                 style: const TextStyle(color: Colors.white54, fontSize: 12),
               ),
-            ] else
+            ] else if (_isSyncing) ...[
+              const LinearProgressIndicator(
+                backgroundColor: Colors.white12,
+                color: Colors.lightBlueAccent,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$_syncCount œuvres synchronisées…',
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: () {
+                  _dbService.cancelSync();
+                  setState(() => _isSyncing = false);
+                },
+                child: const Text('Annuler',
+                    style: TextStyle(color: Colors.white54)),
+              ),
+            ] else ...[
+              TextField(
+                controller: _urlController,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: 'URL de la base SQLite',
+                  labelStyle: const TextStyle(color: Colors.white38),
+                  filled: true,
+                  fillColor: Colors.grey[850],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               FilledButton.icon(
-                onPressed: _downloadDb,
+                onPressed: _urlController.text.trim().isNotEmpty
+                    ? _downloadDb
+                    : null,
                 icon: const Icon(Icons.download),
                 label: const Text('Télécharger'),
                 style: FilledButton.styleFrom(
@@ -559,6 +611,37 @@ class _ImslpOfflineSearchPageState extends State<ImslpOfflineSearchPage> {
                       const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
                 ),
               ),
+              const SizedBox(height: 24),
+              ExpansionTile(
+                title: const Text('Synchroniser depuis IMSLP',
+                    style: TextStyle(color: Colors.white38, fontSize: 13)),
+                iconColor: Colors.white38,
+                collapsedIconColor: Colors.white38,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      children: [
+                        const Text(
+                          'Télécharge le catalogue directement depuis '
+                          'imslp.org. Nécessite une connexion internet '
+                          'et peut prendre plusieurs minutes.',
+                          style: TextStyle(
+                              color: Colors.white38, fontSize: 12),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: _syncFromImslp,
+                          icon: const Icon(Icons.sync),
+                          label: const Text('Synchroniser'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
 
             if (_downloadError != null) ...[
               const SizedBox(height: 12),

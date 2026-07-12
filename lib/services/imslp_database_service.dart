@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -205,6 +206,86 @@ class ImslpDatabaseService {
     }
 
     await sink.close();
+  }
+
+  bool _cancelSync = false;
+
+  void cancelSync() {
+    _cancelSync = true;
+  }
+
+  Future<void> syncFromApi({
+    void Function(int count)? onProgress,
+  }) async {
+    _cancelSync = false;
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+    int start = 0;
+    int totalInserted = 0;
+
+    while (!_cancelSync) {
+      final uri = Uri.parse(
+        'https://imslp.org/imslpscripts/API.ISCR.php'
+        '?account=worklist/disclaimer=accepted/sort=id/type=2'
+        '/start=$start/retformat=json',
+      );
+
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        throw HttpException(
+          'IMSLP API: ${response.statusCode}',
+          uri: uri,
+        );
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      final entries = <Map<String, dynamic>>[];
+      for (final key in data.keys) {
+        if (int.tryParse(key) == null) continue;
+        final value = data[key];
+        if (value is Map<String, dynamic> && value['type'] == '2') {
+          entries.add(value);
+        }
+      }
+
+      if (entries.isEmpty) break;
+
+      final batch = db.batch();
+      for (final entry in entries) {
+        final iv = entry['intvals'];
+        if (iv is! Map<String, dynamic>) continue;
+        batch.rawInsert(
+          'INSERT OR IGNORE INTO imslp_work '
+          '(imslp_id, title, composer, catalog_number, page_id, permlink, synced_at) '
+          'VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [
+            entry['id'] as String? ?? '',
+            iv['worktitle'] as String? ?? '',
+            iv['composer'] as String? ?? '',
+            iv['icatno'] as String? ?? '',
+            int.tryParse(iv['pageid']?.toString() ?? '') ?? 0,
+            entry['permlink'] as String? ?? '',
+            now,
+          ],
+        );
+      }
+      await batch.commit(noResult: true);
+
+      totalInserted += entries.length;
+      onProgress?.call(totalInserted);
+
+      start += entries.length;
+      if (entries.length < 300) break;
+
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+
+    if (totalInserted > 0) {
+      await db.execute(
+        "INSERT INTO imslp_work_fts(imslp_work_fts) VALUES('rebuild')",
+      );
+    }
   }
 
   Future<void> close() async {
