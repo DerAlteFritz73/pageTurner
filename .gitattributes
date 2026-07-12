@@ -1,3 +1,4 @@
 # Ensure shell scripts always use LF line endings (required for bash execution)
 .githooks/* text eol=lf
+assets/db/*.db filter=lfs diff=lfs merge=lfs -text
 assets/db/imslp.db filter=lfs diff=lfs merge=lfs -text
