@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
-
 import 'models/annotation.dart';
 import 'pages/continuo_page.dart';
 import 'pages/imslp_offline_search_page.dart';
@@ -142,6 +141,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     WidgetsBinding.instance.addObserver(this);
     _transformationController.addListener(_onTransformChanged);
     _displayService.init(
@@ -229,7 +229,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     }
   }
 
-  int get _effectiveRotation => _hasSecondaryDisplay ? 0 : _rotation;
+  int get _effectiveRotation => 0;
 
   List<Stroke> get _currentPageStrokes {
     return _annotationData?.getStrokesForPage(_currentPage) ?? [];
@@ -700,25 +700,24 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
                   title: const Text('Écran externe connecté',
                       style: TextStyle(color: Colors.greenAccent)),
                 ),
-              if (_hasSecondaryDisplay)
+              if (_hasSecondaryDisplay) ...[
                 const Divider(color: Colors.white24),
-              // Rotation
-              ListTile(
-                leading: Icon(
-                  Icons.rotate_right,
-                  color: _hasSecondaryDisplay ? Colors.lightBlueAccent : Colors.white,
+                // Rotation (external display only)
+                ListTile(
+                  leading: const Icon(
+                    Icons.rotate_right,
+                    color: Colors.lightBlueAccent,
+                  ),
+                  title: Text(
+                    'Écran externe: ${_rotation * 90}°',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    _rotateRight();
+                    Navigator.of(context).pop();
+                  },
                 ),
-                title: Text(
-                  _hasSecondaryDisplay
-                      ? 'Écran externe: ${_rotation * 90}°'
-                      : 'Rotation: ${_rotation * 90}°',
-                  style: const TextStyle(color: Colors.white),
-                ),
-                onTap: () {
-                  _rotateRight();
-                  Navigator.of(context).pop();
-                },
-              ),
+              ],
               const Divider(color: Colors.white24),
               // Auto-crop
               SwitchListTile(
@@ -906,7 +905,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
     if (choice == 'local') {
       selectedPath = await Navigator.of(context).push<String>(
         MaterialPageRoute(
-          builder: (context) => FileBrowserPage(rotation: _rotation),
+          builder: (context) => const FileBrowserPage(),
         ),
       );
     } else if (choice == 'imslp') {
@@ -1706,9 +1705,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> with WidgetsBindingObserv
 
 // Custom File Browser Page
 class FileBrowserPage extends StatefulWidget {
-  final int rotation;
-
-  const FileBrowserPage({super.key, required this.rotation});
+  const FileBrowserPage({super.key});
 
   @override
   State<FileBrowserPage> createState() => _FileBrowserPageState();
@@ -1849,14 +1846,11 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: RotatedBox(
-          quarterTurns: widget.rotation,
-          child: Column(
-            children: [
-              _buildHeader(),
-              Expanded(child: _buildContent()),
-            ],
-          ),
+        child: Column(
+          children: [
+            _buildHeader(),
+            Expanded(child: _buildContent()),
+          ],
         ),
       ),
     );
