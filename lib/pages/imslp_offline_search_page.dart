@@ -41,7 +41,7 @@ class _ImslpOfflineSearchPageState extends State<ImslpOfflineSearchPage> {
   bool _isDownloading = false;
   double _downloadProgress = 0;
   String? _downloadError;
-  final _urlController = TextEditingController();
+  final _urlController = TextEditingController(text: 'https://android.kreilos.fr/imslp.db');
 
   @override
   void initState() {

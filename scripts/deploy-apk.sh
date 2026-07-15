@@ -36,4 +36,11 @@ ssh "${REMOTE_USER}@${REMOTE_HOST}" "cd ${REMOTE_DIR} && ls -t *.apk | awk 'BEGI
 { print \"<a href=\\\"\" \$0 \"\\\">\" \$0 \"</a>\" }
 END { print \"</body></html>\" }' > index.html"
 
+# Upload IMSLP database if present
+DB_PATH="assets/db/imslp.db"
+if [ -f "$DB_PATH" ]; then
+    echo "Uploading imslp.db..."
+    scp "$DB_PATH" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/imslp.db"
+fi
+
 echo "Deployed: https://android.kreilos.fr/${APK_NAME}"
