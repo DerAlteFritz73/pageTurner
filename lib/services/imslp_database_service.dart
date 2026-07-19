@@ -12,6 +12,9 @@ class ImslpDatabaseService {
   static const _assetPath = 'assets/db/$_dbName';
 
   Database? _db;
+  bool _hasFts5 = false;
+
+  bool get hasFts5 => _hasFts5;
 
   Future<Database> get database async {
     if (_db != null && _db!.isOpen) return _db!;
@@ -38,7 +41,18 @@ class ImslpDatabaseService {
       }
     }
 
-    return openDatabase(path, version: _dbVersion);
+    final db = await openDatabase(path, version: _dbVersion);
+    _hasFts5 = await _checkFts5(db);
+    return db;
+  }
+
+  Future<bool> _checkFts5(Database db) async {
+    try {
+      await db.rawQuery("SELECT * FROM imslp_work_fts WHERE imslp_work_fts MATCH 'test' LIMIT 0");
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> _copyFromAssets(String destPath) async {
@@ -56,13 +70,15 @@ class ImslpDatabaseService {
   }
 
   Future<Database> _createEmpty(String path) async {
-    return openDatabase(
+    final db = await openDatabase(
       path,
       version: _dbVersion,
       onCreate: (db, version) async {
         await _createSchema(db);
       },
     );
+    _hasFts5 = await _checkFts5(db);
+    return db;
   }
 
   Future<void> _createSchema(Database db) async {
@@ -125,19 +141,23 @@ class ImslpDatabaseService {
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_work_year ON imslp_work(year_composed_int)');
 
-    await db.execute('''
-      CREATE VIRTUAL TABLE IF NOT EXISTS imslp_work_fts USING fts5(
-        title,
-        composer,
-        catalog_number,
-        alternative_title,
-        instrumentation,
-        tags,
-        genre_cats,
-        content='imslp_work',
-        content_rowid='id'
-      )
-    ''');
+    try {
+      await db.execute('''
+        CREATE VIRTUAL TABLE IF NOT EXISTS imslp_work_fts USING fts5(
+          title,
+          composer,
+          catalog_number,
+          alternative_title,
+          instrumentation,
+          tags,
+          genre_cats,
+          content='imslp_work',
+          content_rowid='id'
+        )
+      ''');
+    } catch (_) {
+      // FTS5 not available on this device — search falls back to LIKE
+    }
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS imslp_edition (
@@ -206,6 +226,36 @@ class ImslpDatabaseService {
     }
 
     await sink.close();
+
+    // Rebuild FTS index for compatibility with device SQLite version
+    await _rebuildFts(path);
+  }
+
+  Future<void> _rebuildFts(String path) async {
+    final db = await openDatabase(path);
+    try {
+      await db.execute('DROP TABLE IF EXISTS imslp_work_fts');
+      await db.execute('''
+        CREATE VIRTUAL TABLE IF NOT EXISTS imslp_work_fts USING fts5(
+          title,
+          composer,
+          catalog_number,
+          alternative_title,
+          instrumentation,
+          tags,
+          genre_cats,
+          content='imslp_work',
+          content_rowid='id'
+        )
+      ''');
+      await db.execute(
+        "INSERT INTO imslp_work_fts(imslp_work_fts) VALUES('rebuild')",
+      );
+    } catch (_) {
+      // FTS5 not available — search will use LIKE fallback
+    } finally {
+      await db.close();
+    }
   }
 
   bool _cancelSync = false;
@@ -281,7 +331,7 @@ class ImslpDatabaseService {
       await Future.delayed(const Duration(milliseconds: 200));
     }
 
-    if (totalInserted > 0) {
+    if (totalInserted > 0 && _hasFts5) {
       await db.execute(
         "INSERT INTO imslp_work_fts(imslp_work_fts) VALUES('rebuild')",
       );

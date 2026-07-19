@@ -276,7 +276,7 @@ class ImslpDbSearchService {
   Future<int> _countTitleSearch(String query, WorkFilters filters) async {
     final db = await _dbService.database;
     final where = _buildFilterWhere(filters);
-    final ftsQuery = _toFts5Query(query);
+    final ftsQuery = _dbService.hasFts5 ? _toFts5Query(query) : '';
 
     if (ftsQuery.isNotEmpty) {
       final rows = await db.rawQuery(
@@ -304,7 +304,7 @@ class ImslpDbSearchService {
     final db = await _dbService.database;
     final where = _buildFilterWhere(filters);
     final offset = (page - 1) * perPage;
-    final ftsQuery = _toFts5Query(query);
+    final ftsQuery = _dbService.hasFts5 ? _toFts5Query(query) : '';
 
     if (ftsQuery.isNotEmpty) {
       final rows = await db.rawQuery(
@@ -355,12 +355,18 @@ class ImslpDbSearchService {
     if (f.instrumentation.isNotEmpty) {
       final expanded = _expandInstrumentation(f.instrumentation);
       if (expanded.isNotEmpty) {
-        final ftsQuery =
-            expanded.map((t) => '$t*').join(' AND ');
-        parts.add(
-          '(w.id IN (SELECT rowid FROM imslp_work_fts WHERE imslp_work_fts MATCH ?))',
-        );
-        args.add(ftsQuery);
+        if (_dbService.hasFts5) {
+          final ftsQuery = expanded.map((t) => '$t*').join(' AND ');
+          parts.add(
+            '(w.id IN (SELECT rowid FROM imslp_work_fts WHERE imslp_work_fts MATCH ?))',
+          );
+          args.add(ftsQuery);
+        } else {
+          for (final term in expanded) {
+            parts.add('w.instrumentation LIKE ?');
+            args.add('%${_escapeLike(term)}%');
+          }
+        }
       }
     }
 
