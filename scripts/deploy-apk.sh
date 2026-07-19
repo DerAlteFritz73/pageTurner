@@ -26,14 +26,15 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Regenerating index.html..."
-ssh "${REMOTE_USER}@${REMOTE_HOST}" "cd ${REMOTE_DIR} && ls -t *.apk | awk 'BEGIN {
+ssh "${REMOTE_USER}@${REMOTE_HOST}" "cd ${REMOTE_DIR} && ls -t *.apk | while read f; do echo \"\$f $(stat -c %y \"\$f\" | cut -d. -f1)\"; done | awk 'BEGIN {
     print \"<!DOCTYPE html><html><head><meta charset=\\\"utf-8\\\"><title>Leggio APK</title>\"
     print \"<style>body{font-family:sans-serif;max-width:600px;margin:40px auto;padding:0 20px}\"
     print \"a{display:block;padding:8px 0;color:#1a73e8;text-decoration:none}\"
-    print \"a:hover{text-decoration:underline}</style></head><body>\"
+    print \"a:hover{text-decoration:underline}\"
+    print \"span{color:#666;font-size:0.85em;margin-left:12px}</style></head><body>\"
     print \"<h1>Leggio</h1>\"
 }
-{ print \"<a href=\\\"\" \$0 \"\\\">\" \$0 \"</a>\" }
+{ print \"<a href=\\\"\" \$1 \"\\\">\" \$1 \"<span>\" \$2 \" \" \$3 \"</span></a>\" }
 END { print \"</body></html>\" }' > index.html"
 
 # Upload IMSLP database if present
